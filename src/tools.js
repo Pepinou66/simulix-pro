@@ -65,13 +65,13 @@ $('#logoIn').onchange = e => {
 $('#fileIn').onchange = e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => { $('#modal').classList.remove('open'); Files.loadText(r.result); }; r.readAsText(f); e.target.value = ''; };
 
 /* ===================== OUTILS D'INGÉNIERIE ===================== */
-const UNIQUE = ['pb_no', 'pb_nc', 'sw_no', 'estop', 'coil', 'coil_t', 'lamp', 'motor', 'buzzer', 'supply', 'cyl', 'motorf', 'valve', 'ls_no', 'ls_nc', 'prox', 'plc', 'pump', 'compressor', 'conveyor', 'traffic'];
+const UNIQUE = ['pb_no', 'pb_nc', 'sw_no', 'estop', 'coil', 'coil_t', 'lamp', 'motor', 'buzzer', 'supply', 'cyl', 'motorf', 'valve', 'ls_no', 'ls_nc', 'prox', 'plc', 'pump', 'hpump', 'compressor', 'conveyor', 'traffic'];
 const Eng = {
   tab: 'bom',
   open(tab) {
     if (tab) this.tab = tab; const dlg = $('#dlg'); dlg.className = 'dlg';
     dlg.innerHTML = `<header><h2>Outils d'ingénierie — ${esc(App.project.name)}</h2><button class="btn" id="enClose">Fermer</button></header>
-      <div class="tabs" id="enTabs">${[['bom', 'Nomenclature'], ['erc', 'Vérification du projet'], ['tags', 'Gestionnaire de repères'], ['wl', 'Liste des fils'], ['calc', 'Calculs hydrauliques'], ['ana', 'Analyse de panne (5M / 5 Pourquoi)'], ['exp', 'Export / impression'], ['lib', 'Bibliothèque d\'exercice']].map(([k, l]) => `<button data-t="${k}" class="${k === this.tab ? 'on' : ''}">${l}</button>`).join('')}</div><div class="body" id="enBody"></div>`;
+      <div class="tabs" id="enTabs">${[['bom', 'Nomenclature'], ['erc', 'Vérification du projet'], ['tags', 'Gestionnaire de repères'], ['wl', 'Liste des fils et flexibles'], ['calc', 'Calculs hydrauliques'], ['ana', 'Analyse de panne (5M / 5 Pourquoi)'], ['exp', 'Export / impression'], ['lib', 'Bibliothèque d\'exercice']].map(([k, l]) => `<button data-t="${k}" class="${k === this.tab ? 'on' : ''}">${l}</button>`).join('')}</div><div class="body" id="enBody"></div>`;
     $('#modal').classList.add('open'); $('#enClose').onclick = () => $('#modal').classList.remove('open');
     $('#enTabs').onclick = e => { if (e.target.dataset.t) this.open(e.target.dataset.t); };
     this[this.tab]($('#enBody'));
@@ -88,6 +88,7 @@ const Eng = {
   bom(B) {
     const groups = new Map();
     App.comps.forEach(c => { const d = DEFS[c.type]; if (!d.bom || c.type === 'text' || c.type === 'node') return; const des = typeof d.bom === 'function' ? d.bom(c) : d.bom; const key = des + '|' + (c.props.ref || ''); const g = groups.get(key) || { des, ref: c.props.ref || '', tags: [], n: 0, tech: d.cat || (c.props.medium === 'hyd' ? 'Hydraulique' : 'Pneumatique') }; g.tags.push(c.props.tag || ''); g.n++; groups.set(key, g); });
+    App.wires.filter(w => w.ref).forEach(w => { const fl = w.kind !== 'e' && w.kind !== 'l' && w.kind !== 'x'; const des = fl ? 'Flexible / conduite ' + (w.kind === 'h' ? 'hydraulique' : 'pneumatique') : 'Fil / câble'; const key = des + '|' + w.ref; const g = groups.get(key) || { des, ref: w.ref, tags: [], n: 0, tech: fl ? 'Liaisons fluidiques' : 'Liaisons électriques' }; g.tags.push(w.name || ''); g.n++; groups.set(key, g); });
     const head = ['Pos.', 'Qté', 'Désignation', 'Référence', 'Repères', 'Technologie'];
     const rows = [...groups.values()].sort((a, b) => a.tech.localeCompare(b.tech) || a.des.localeCompare(b.des)).map((g, i) => [i + 1, g.n, esc(g.des), esc(g.ref), esc(g.tags.filter(Boolean).join(', ')), esc(g.tech)]);
     const [btn, bind] = this.exportBtns('Nomenclature_' + App.project.name, head, rows);
@@ -115,19 +116,20 @@ const Eng = {
     const has = t => App.comps.some(c => t.includes(c.type));
     if (has(['coil', 'lamp', 'sol', 'motor', 'plc', 'conveyor']) && !has(['supply'])) add('err', null, 'Aucune alimentation électrique dans le projet');
     if (App.comps.some(c => c.props.medium === 'pneu' && DEFS[c.type].isActuator) && !has(['compressor'])) add('err', null, 'Aucune source d\'air comprimé');
-    if (App.comps.some(c => c.props.medium === 'hyd' && DEFS[c.type].isActuator) && !has(['pump'])) add('err', null, 'Aucun groupe hydraulique');
+    if (App.comps.some(c => c.props.medium === 'hyd' && DEFS[c.type].isActuator) && !has(['pump', 'hpump', 'pumpvar'])) add('err', null, 'Aucun groupe hydraulique ni pompe');
+    App.comps.filter(c => c.type === 'hpump' && (c.props.ptype || 'fixe') !== 'regp' && !App.comps.some(o => o.type === 'relief')).forEach(c => add('err', c, 'Pompe seule sans limiteur de pression dans le circuit : prévoir un limiteur sur le refoulement'));
     // calculs de dimensionnement
     const calc = App.comps.filter(c => c.type === 'cyl').map(c => {
-      const g = cylGeom(c), hyd = c.props.medium === 'hyd'; const src = App.comps.find(x => x.type === (hyd ? 'pump' : 'compressor'));
-      const p = src ? (hyd ? +src.props.pmax : +src.props.p) : 0, q = hyd && src ? +src.props.q : 0;
+      const g = cylGeom(c), hyd = c.props.medium === 'hyd'; const src = App.comps.find(x => hyd ? x.type === 'pump' || x.type === 'hpump' : x.type === 'compressor');
+      const p = src ? (hyd ? +(src.type === 'hpump' ? (App.comps.find(o => o.type === 'relief')?.props.set || src.props.pc || src.props.padm) : src.props.pmax) : +src.props.p) : 0, q = hyd && src ? +src.props.q : 0;
       const Fp = p * g.Ab / 10, Ft = p * g.Aa / 10, ve = hyd && q ? q * 1e6 / 60 / g.Ab : null, vr = hyd && q ? q * 1e6 / 60 / g.Aa : null;
       if (+c.props.load > Fp) add('err', c, 'Charge ' + c.props.load + ' N > effort disponible ' + fmt(Fp, 0) + ' N à ' + p + ' bar');
       return [esc(c.props.tag), hyd ? 'Hyd.' : 'Pneu.', 'Ø' + c.props.bore + '/' + c.props.rod + ' × ' + c.props.stroke, fmt(g.Ab / 100, 2), fmt(g.Aa / 100, 2), fmt(Fp, 0), fmt(Ft, 0), c.props.load || 0, ve ? fmt(ve, 0) + ' / ' + fmt(vr, 0) : '—', ve ? fmt(g.L / ve, 2) + ' / ' + fmt(g.L / vr, 2) : '—'];
     });
     // règles issues des cours d'hydraulique
-    const pumps = App.comps.filter(c => c.type === 'pump');
+    const pumps = App.comps.filter(c => c.type === 'pump' || c.type === 'hpump');
     pumps.forEach(pu => {
-      const q = pumpQ(pu), pm = +pu.props.pmax || 0;
+      const q = pumpQ(pu), pm = +(pu.type === 'hpump' ? (App.comps.find(o => o.type === 'relief')?.props.set || pu.props.pc || pu.props.padm) : pu.props.pmax) || 0;
       add('info', pu, 'Puissance hydraulique maxi Q×p/600 = ' + fmt(q * pm / 600, 2) + ' kW (débit ' + fmt(q, 1) + ' L/min, tarage ' + pm + ' bar)');
       App.comps.filter(c => c.type === 'cyl' && c.props.medium === 'hyd').forEach(cy => {
         const g = cylGeom(cy), qr = q * g.Ab / g.Aa;
@@ -163,8 +165,8 @@ const Eng = {
   wl(B) {
     const nums = (() => { const o = App.opts.wireNums; App.opts.wireNums = true; const m = wireNumbers(); App.opts.wireNums = o; return m; })();
     const lab = r => { const c = App.byId(r.c); return c ? (c.props.tag || DEFS[c.type].name) + ':' + r.p : '?'; };
-    const rows = App.wires.map(w => [nums.get(w.id) || '—', esc(kname(w.kind)), esc(lab(w.a)), esc(lab(w.b)), (App.byId(w.a.c)?.sheet ?? 0) + 1, w.cut ? 'COUPÉ' : '']).sort((a, b) => String(a[0]).localeCompare(String(b[0]), 'fr', { numeric: true }));
-    const head = ['N° équipotentielle', 'Type', 'Origine', 'Destination', 'Folio', 'État'];
+    const rows = App.wires.map(w => [nums.get(w.id) || '—', esc(w.name || ''), esc(kname(w.kind)), esc(lab(w.a)), esc(lab(w.b)), esc(w.ref || ''), (App.byId(w.a.c)?.sheet ?? 0) + 1, w.cut ? 'COUPÉ' : '']).sort((a, b) => String(a[0]).localeCompare(String(b[0]), 'fr', { numeric: true }));
+    const head = ['N° équipotentielle', 'Nom', 'Type', 'Origine', 'Destination', 'Référence', 'Folio', 'État'];
     const [btn, bind] = this.exportBtns('Liste_fils_' + App.project.name, head, rows);
     B.innerHTML = btn + this.table(head, rows); bind();
   },

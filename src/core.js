@@ -18,7 +18,7 @@ const App = {
   serialize() {
     return JSON.stringify({ app: 'Simulix Pro', version: 1, project: this.project, opts: this.opts, sheets: this.sheets, hideFaults: this.hideFaults, lib: this.lib,
       comps: this.comps.map(c => ({ id: c.id, type: c.type, x: c.x, y: c.y, rot: c.rot || 0, sheet: c.sheet || 0, props: c.props, fault: c.fault || null })),
-      wires: this.wires.map(w => ({ id: w.id, a: w.a, b: w.b, kind: w.kind, mo: w.mo ?? null, cut: !!w.cut })) });
+      wires: this.wires.map(w => ({ id: w.id, a: w.a, b: w.b, kind: w.kind, mo: w.mo ?? null, cut: !!w.cut, name: w.name || '', ref: w.ref || '', color: w.color || '', keepColor: !!w.keepColor })) });
   },
   load(json, keepHist) {
     const o = typeof json === 'string' ? JSON.parse(json) : json;
@@ -129,6 +129,11 @@ const PHCOL = { '+': '#dc2626', '0': '#2563eb', L1: '#92400e', L2: '#111827', L3
 function wireStyle(w, S) {
   const k = w.kind;
   if (w.cut && !App.hideFaults) return ['#dc2626', 2, [6, 4]];
+  if (w.color && (!S || w.keepColor)) { const base = S ? wireStyle0(w, S) : null; return [w.color, base ? base[1] : (k === 'h' ? 2.4 : 1.8), []]; }
+  return wireStyle0(w, S);
+}
+function wireStyle0(w, S) {
+  const k = w.kind;
   if (!S) return [WCOL[k] || '#334155', k === 'h' ? 2.2 : 1.6, k === 'f' ? [] : []];
   const c = App.byId(w.a.c), p = w.a.p, i = S.info(c, p);
   if (k === 'e' || (k === 'x' && (i.pots || S.vp.has(S.root(c, p))))) {
@@ -226,6 +231,7 @@ function drawScene(g, S, ui) {
     if (w.kind === 'p' && !S && false) g.setLineDash([]);
     g.beginPath(); wp.pts.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); g.stroke(); g.setLineDash([]);
     if (nets && w.kind === 'e') { const n = nets.get(w.id); if (n) { const m = wp.pts[2]; D.text(g, n, m.x + 6, m.y - 7, 9, '#7c3aed', 'left', true); } }
+    if (w.name) { const a = wp.pts[2], b2 = wp.pts[3] || a, mx = (a.x + b2.x) / 2, my = (a.y + b2.y) / 2; g.save(); g.font = '600 10px system-ui,sans-serif'; g.textAlign = 'center'; g.textBaseline = 'bottom'; g.lineJoin = 'round'; g.strokeStyle = 'rgba(255,255,255,.95)'; g.lineWidth = 4; g.strokeText(w.name, mx, my - 3); g.fillStyle = w.color || '#334155'; g.fillText(w.name, mx, my - 3); g.restore(); }
   }
   // nœuds de jonction automatiques (≥3 fils sur un même port)
   const cnt = new Map(); App.wires.forEach(w => [w.a, w.b].forEach(r => { const k = r.c + ':' + r.p; cnt.set(k, (cnt.get(k) || 0) + 1); }));
@@ -238,7 +244,7 @@ function drawScene(g, S, ui) {
     g.restore();
     const b = compBBox(c);
     drawLabel(g, c, b, ui && !S);
-    if (ui && S && App.hover === c.id && d.press) { const pr = drag && drag.mode === 'press' && drag.c === c; g.save(); g.fillStyle = pr ? 'rgba(245,158,11,.16)' : 'rgba(15,98,254,.07)'; g.strokeStyle = pr ? 'rgba(245,158,11,.9)' : 'rgba(15,98,254,.45)'; g.lineWidth = 1.5 / v.s; g.beginPath(); g.roundRect(b.x - 6, b.y - 6, b.w + 12, b.h + 12, 8); g.fill(); g.stroke(); g.restore(); }
+    if (ui && S && App.hover === c.id && d.press) { const pr = drag && drag.mode === 'press' && drag.c === c, b = hoverBox(c); g.save(); g.fillStyle = pr ? 'rgba(245,158,11,.16)' : 'rgba(15,98,254,.07)'; g.strokeStyle = pr ? 'rgba(245,158,11,.9)' : 'rgba(15,98,254,.45)'; g.lineWidth = 1.5 / v.s; g.beginPath(); g.roundRect(b.x - 6, b.y - 6, b.w + 12, b.h + 12, 8); g.fill(); g.stroke(); g.restore(); }
     if (ui && !S && App.sel.has(c.id)) { g.strokeStyle = '#0f62fe'; g.lineWidth = 1.5 / v.s; g.setLineDash([4 / v.s, 3 / v.s]); g.strokeRect(b.x - 5, b.y - 5, b.w + 10, b.h + 10); g.setLineDash([]); }
     if (ui && c.fault && !App.hideFaults) { const r = clamp(9 / v.s, 7, 22), x = b.x + b.w + r * .6, y = b.y - r * .6; g.save(); g.fillStyle = '#dc2626'; g.strokeStyle = '#fff'; g.lineWidth = 2 / v.s; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); g.stroke(); D.text(g, '!', x, y + r * .05, r * 1.45, '#fff', 'center', true); g.restore(); badges.push({ c, x, y, r }); }
     if (S && c.state && c.state.burnt) { D.text(g, '💥', b.x + b.w / 2, b.y + b.h / 2, 22, '#111'); }
@@ -264,7 +270,20 @@ function wireNumbers() {
 
 /* ===================== INTERACTION ===================== */
 const ptrs = new Map(); let drag = null, lastTap = { t: 0, id: null }, pinch = null;
-function hitComp(p) { const cs = App.sheetComps(); for (let i = cs.length - 1; i >= 0; i--) { const c = cs[i], b = compBBox(c); if (p.x >= b.x - 2 && p.x <= b.x + b.w + 2 && p.y >= b.y - 2 && p.y <= b.y + b.h + 2) return c; } return null; }
+function hitComp(p) {
+  const cs = App.sheetComps();
+  for (let i = cs.length - 1; i >= 0; i--) { const c = cs[i], b = compBBox(c); if (p.x >= b.x - 2 && p.x <= b.x + b.w + 2 && p.y >= b.y - 2 && p.y <= b.y + b.h + 2) return c; }
+  if (Sim.S) for (let i = cs.length - 1; i >= 0; i--) { const c = cs[i], d = DEFS[c.type]; if (!d.extraRects) continue; const l = toLocal(c, p.x, p.y); if (d.extraRects(c).some(r => l.x >= r.x && l.x <= r.x + r.w && l.y >= r.y && l.y <= r.y + r.h)) return c; }
+  return null;
+}
+function hoverBox(c) { // boîte de survol : encombrement + zone animée éventuelle
+  let b = compBBox(c); const d = DEFS[c.type]; if (!d.extraRects || !Sim.S) return b;
+  const { w, h } = compSize(c), cx = c.x + w / 2, cy = c.y + h / 2;
+  const toW = (x, y) => { let dx = x - w / 2, dy = y - h / 2; for (let i = 0; i < (c.rot || 0); i++) { const t = dx; dx = -dy; dy = t; } return { x: cx + dx, y: cy + dy }; };
+  let x0 = b.x, y0 = b.y, x1 = b.x + b.w, y1 = b.y + b.h;
+  d.extraRects(c).forEach(r => [toW(r.x, r.y), toW(r.x + r.w, r.y + r.h)].forEach(q => { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y); }));
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
 function hitPort(p) { const r = 9 / Math.max(App.view.s, .5); let best = null, bd = r; for (const c of App.sheetComps()) for (const q of compPorts(c)) { const w = portWorld(c, q), d = Math.hypot(w.x - p.x, w.y - p.y); if (d < bd) { bd = d; best = { c, p: q }; } } return best; }
 function hitWire(p) { const tol = 6 / App.view.s, ids = new Set(App.sheetComps().map(c => c.id)); for (const w of App.wires) { if (!ids.has(w.a.c)) continue; const wp = wirePts(w); if (!wp) continue; for (let i = 0; i < wp.pts.length - 1; i++) if (distSeg(p, wp.pts[i], wp.pts[i + 1]) < tol) return w; } return null; }
 cv.addEventListener('pointerdown', e => {
@@ -585,16 +604,26 @@ const Props = {
   renderWire(el) {
     const w = App.wires.find(x => x.id === App.selWire); if (!w) { App.selWire = null; return this.render(); }
     const A = portRef(w.a), B = portRef(w.b);
-    let h = `<h3>Liaison ${kname(w.kind)}</h3><div class="pp"><div class="kv"><span>De</span><b>${esc(A ? (A.c.props.tag || DEFS[A.c.type].name) + ' : ' + A.p.id : '?')}</b><span>Vers</span><b>${esc(B ? (B.c.props.tag || DEFS[B.c.type].name) + ' : ' + B.p.id : '?')}</b>`;
+    let h = `<h3>${w.name ? esc(w.name) + ' — ' : ''}Liaison ${kname(w.kind)}</h3><div class="pp"><div class="kv"><span>De</span><b>${esc(A ? (A.c.props.tag || DEFS[A.c.type].name) + ' : ' + A.p.id : '?')}</b><span>Vers</span><b>${esc(B ? (B.c.props.tag || DEFS[B.c.type].name) + ' : ' + B.p.id : '?')}</b>`;
     if (Sim.S && A) { const S = Sim.S; if (w.kind === 'e' || w.kind === 'x') { const pt = S.pot(A.c, A.p.id); h += `<span>Potentiel</span><b>${!pt ? 'non alimenté' : (pt.ph || '') + ' — ' + (pt.dc ? pt.dc + ' V DC' : fmt(Math.hypot(pt.re, pt.im), 0) + ' V AC / terre')}</b>`; } else if (w.kind !== 'l') h += `<span>Pression</span><b>${fmt(S.P(A.c, A.p.id), 2)} bar</b><span>Débit</span><b>${fmt(S.Q(A.c, A.p.id), 2)} L/min</b>`; }
-    h += `</div><div class="btns">`;
+    h += `</div>`;
     const fl = w.kind !== 'e' && w.kind !== 'l' && w.kind !== 'x';
+    h += `<div class="row"><label>Nom ${fl ? 'du flexible / de la conduite' : 'du fil / du câble'}</label><input id="wName" value="${esc(w.name || '')}" placeholder="${fl ? 'ex. FL1, conduite P' : 'ex. W12'}"></div>
+      <div class="row"><label>Référence</label><input id="wRef" value="${esc(w.ref || '')}" placeholder="${fl ? 'ex. Flexible 2SN DN10 L=1 m' : 'ex. H07V-K 1,5 mm²'}"></div>
+      <div class="row"><label>Couleur</label><div style="display:flex;gap:6px;align-items:center"><input type="color" id="wCol" value="${w.color || (WCOL[w.kind] || '#334155')}" style="width:48px;height:30px;padding:1px"><button class="btn" id="wColAuto">Automatique</button></div></div>
+      <div class="row chk"><input type="checkbox" id="wKeep" ${w.keepColor ? 'checked' : ''}><label>Garder cette couleur pendant la simulation (sinon : couleur d'état pression / tension)</label></div>
+      <div class="btns">`;
     if (!App.hideFaults) h += `<button class="btn" id="wCut">${w.cut ? (fl ? '✔ Remplacer le flexible' : '✔ Réparer le fil') : (fl ? '💥 Simuler une rupture de flexible' : '✂ Simuler un fil coupé')}</button>`;
     else h += `<button class="btn" id="wRep">🔎 Signaler ${fl ? 'ce flexible comme rompu' : 'ce fil comme coupé'}</button>`;
     if (!Sim.S) h += `<button class="btn" id="wReset">Tracé automatique</button><button class="btn dng" onclick="App.delSel()">🗑 Supprimer</button>`;
     h += `</div><p class="hint">Faites glisser un fil pour déplacer son segment central.</p></div>`;
     el.innerHTML = h;
     const cut = $('#wCut'); if (cut) cut.onclick = () => { w.cut = !w.cut; App.changed(); };
+    $('#wName').onchange = e => { w.name = e.target.value.trim(); App.changed(); };
+    $('#wRef').onchange = e => { w.ref = e.target.value.trim(); App.changed(); };
+    $('#wCol').oninput = e => { w.color = e.target.value; }; $('#wCol').onchange = () => App.changed();
+    $('#wColAuto').onclick = () => { w.color = ''; App.changed(); };
+    $('#wKeep').onchange = e => { w.keepColor = e.target.checked; App.changed(); };
     const rs = $('#wReset'); if (rs) rs.onclick = () => { w.mo = null; App.changed(); };
     const rp = $('#wRep'); if (rp) rp.onclick = () => Trouble.report(null, w);
   },

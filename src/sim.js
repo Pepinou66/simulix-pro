@@ -229,7 +229,7 @@ const Sim = {
     }
     // température de l'huile : échauffement par laminage, refroidissement naturel (réservoir, échangeur)
     let lamT = 0; for (const v of S.lam.values()) lamT += v;
-    if (App.comps.some(c => c.type === 'pump' || c.type === 'pumpvar')) { S.oilT += dt * (lamT * 0.12 - (S.oilT - 25) * 0.01); S.visc = 46 * Math.pow(2, -(S.oilT - 40) / 10); }
+    if (App.comps.some(c => c.type === 'pump' || c.type === 'hpump' || c.type === 'pumpvar')) { S.oilT += dt * (lamT * 0.12 - (S.oilT - 25) * 0.01); S.visc = 46 * Math.pow(2, -(S.oilT - 40) / 10); }
     const rupt = [...S.net.values()].find(i => i.rupt && i.src && i.med === 'h');
     if (rupt) S.banner = '⚠ Rupture de flexible sous pression : risque d\'injection d\'huile sous la peau dès 20 bar — arrêter la pompe';
     else if (S.oilT > 80 && !Object.keys(S.trip).length) S.banner = '🌡 Huile à ' + fmt(S.oilT, 0) + ' °C : échauffement par laminage au limiteur (viscosité ' + fmt(S.visc, 1) + ' cSt)';

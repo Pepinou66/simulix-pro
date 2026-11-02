@@ -518,6 +518,73 @@ def('pump', {
   },
   plot: (c, S) => S ? S.P(c, 'P') : 0, plotUnit: 'bar'
 });
+/* Pompe seule (sans limiteur ni réservoir intégrés) : on câble soi-même aspiration, limiteur, drain */
+const PTECH = { engr: 'à engrenages externes', engri: 'à engrenages internes', pal: 'à palettes', pax: 'à pistons axiaux', prad: 'à pistons radiaux', vis: 'à vis' };
+def('hpump', {
+  name: 'Pompe hydraulique seule', cat: 'Hydraulique', w: 80, h: 100,
+  portsFn(c) { const o = [P('P', 40, 0, 'h', 'P (refoulement)'), P('S', 40, 100, 'h', 'S (aspiration)')]; if ((c.props.ptype || 'fixe') !== 'fixe' || c.props.drain) o.push(P('L', 80, 74, 'h', 'L (drain carter)')); return o; },
+  defProps: { tag: '0P1', ptype: 'fixe', tech: 'engr', disp: 16, n: 1450, etav: 95, cmd: 100, pc: 160, dls: 20, padm: 250, mot: '', drain: false },
+  fieldsFn: c => [TAGF, { k: 'ptype', label: 'Type de pompe', type: 'sel', opts: Object.keys(PTYPES), labels: Object.values(PTYPES) },
+    { k: 'tech', label: 'Technologie', type: 'sel', opts: Object.keys(PTECH), labels: Object.values(PTECH).map(t => 'Pompe ' + t) },
+    { k: 'disp', label: (c.props.ptype || 'fixe') === 'fixe' ? 'Cylindrée (cm³/tr)' : 'Cylindrée maxi (cm³/tr)', type: 'num', step: 0.5 }, { k: 'n', label: 'Régime d\'entraînement (tr/min)', type: 'num' }, { k: 'etav', label: 'Rendement volumétrique (%)', type: 'num' },
+    ...(c.props.ptype === 'variable' ? [{ k: 'cmd', label: 'Cylindrée réglée (% du maxi)', type: 'range' }] : []),
+    ...(c.props.ptype === 'regp' ? [{ k: 'pc', label: 'Consigne du régulateur de pression (bar)', type: 'num' }] : []),
+    ...(c.props.ptype === 'ls' ? [{ k: 'dls', label: 'Δp de stand-by load-sensing (bar)', type: 'num' }, { k: 'pc', label: 'Coupure de pression (cut-off, bar)', type: 'num' }] : []),
+    { k: 'padm', label: 'Pression maxi admissible par la pompe (bar)', type: 'num' },
+    { k: 'mot', label: 'Entraînée par le moteur électrique (repère, vide = entraînement permanent)', type: 'text' },
+    ...((c.props.ptype || 'fixe') === 'fixe' ? [{ k: 'drain', label: 'Drain de carter externe (orifice L)', type: 'chk' }] : []), REFF],
+  catalog: [{ ref: 'Pompe à engrenages externes 8 cm³/tr', props: { ptype: 'fixe', tech: 'engr', disp: 8, padm: 200 } }, { ref: 'Pompe à engrenages externes 16 cm³/tr', props: { ptype: 'fixe', tech: 'engr', disp: 16, padm: 210 } },
+    { ref: 'Pompe à engrenages internes 32 cm³/tr', props: { ptype: 'fixe', tech: 'engri', disp: 32, padm: 280 } }, { ref: 'Pompe à palettes fixe 20 cm³/tr', props: { ptype: 'fixe', tech: 'pal', disp: 20, padm: 160 } },
+    { ref: 'Pompe à palettes variable régulée 40 cm³/tr', props: { ptype: 'regp', tech: 'pal', disp: 40, pc: 100, padm: 160 } }, { ref: 'Pompe à pistons axiaux variable 45 cm³/tr (manuelle)', props: { ptype: 'variable', tech: 'pax', disp: 45, n: 1800, padm: 350 } },
+    { ref: 'Pompe à pistons axiaux 71 cm³/tr régulée en pression', props: { ptype: 'regp', tech: 'pax', disp: 71, n: 1800, pc: 210, padm: 350 } }, { ref: 'Pompe à pistons axiaux 45 cm³/tr load-sensing', props: { ptype: 'ls', tech: 'pax', disp: 45, n: 1800, dls: 20, pc: 250, padm: 350 } },
+    { ref: 'Pompe à pistons radiaux 10 cm³/tr', props: { ptype: 'fixe', tech: 'prad', disp: 10, padm: 500 } }, { ref: 'Pompe à vis 60 cm³/tr (silencieuse)', props: { ptype: 'fixe', tech: 'vis', disp: 60, padm: 100 } }],
+  faults: [['low', 'Pompe usée (fuites internes : débit réduit)'], ['cav', 'Cavitation : aspiration obstruée / crépine colmatée'], ['reg', 'Régulateur bloqué en grande cylindrée'], ['shaft', 'Accouplement cassé (la pompe ne tourne plus)']],
+  bom: c => 'Pompe hydraulique ' + PTECH[c.props.tech || 'engr'] + ' — ' + PTYPES[c.props.ptype || 'fixe'].toLowerCase() + ' ' + c.props.disp + ' cm³/tr',
+  speed(c) { // régime réel : moteur électrique associé ou entraînement permanent
+    if (c.fault === 'shaft') return 0; const n = +c.props.n || 1450; if (!c.props.mot) return n;
+    const m = App.comps.find(o => o.props.tag === c.props.mot && (o.type === 'motor3' || o.type === 'motor' || o.type === 'motorf')); if (!m) return n;
+    const s = st(m); if (m.type === 'motor3') return n * Math.min(1, Math.abs(s.n || 0) / 1440); return n * (s.on || s.run || s.act || Math.abs(s.spd || 0) > 0.1 ? 1 : 0);
+  },
+  srcVal(c) {
+    const t = c.props.ptype || 'fixe', s = st(c), nr = this.speed(c);
+    let q = (+c.props.disp || 16) * nr / 1000 * ((+c.props.etav || 95) / 100) * (t === 'variable' ? clamp(+c.props.cmd || 0, 0, 100) / 100 : 1);
+    if (c.fault === 'low') q *= 0.55; if (c.fault === 'cav') q *= 0.5; if (s.dry) q = 0;
+    const reg = c.fault === 'reg' ? null : t === 'regp' ? (+c.props.pc || 160) : null, ls = c.fault === 'reg' ? null : t === 'ls' ? (+c.props.dls || 20) : null;
+    let p = +c.props.padm || 250; if (t === 'ls' && c.fault !== 'reg') p = Math.min(p, +c.props.pc || p);
+    return { q, p, reg, ls, nr };
+  },
+  update(c, S) { const dry = !S.vent(c, 'S'); if (st(c).dry !== dry) { st(c).dry = dry; return true; } return false; },
+  sources(c) { const v = this.srcVal(c); const o = v.q > 0.01 ? [['P', 'hyd', v.p, v.q, 0, { reg: v.reg, ls: v.ls }]] : []; if (compPorts(c).some(p => p.id === 'L')) o.push(['L', 'tank']); return o; },
+  step(c, S) {
+    const s = st(c), v = this.srcVal(c); if (s.dry && v.nr > 0 && !s.warnDry) { s.warnDry = 1; S.stickyBanner = S.banner = '⚠ Pompe ' + c.props.tag + ' : aspiration S non reliée au réservoir — la pompe tourne à sec (cavitation, destruction)'; }
+    if (!s.dry) s.warnDry = 0;
+    const p = S.P(c, 'P'), lim = +c.props.padm || 250;
+    if (v.q > 0.01 && v.reg == null && p >= lim * 0.97 && !s.warnP) { s.warnP = 1; S.stickyBanner = S.banner = '💥 Pompe ' + c.props.tag + ' : ' + Math.round(p) + ' bar ≥ pression maxi admissible ' + lim + ' bar — aucun limiteur de pression ne protège le refoulement (casse pompe / flexibles)'; }
+    if (p < lim * 0.9) s.warnP = 0;
+  },
+  press(c) { if (c.props.ptype === 'variable') { c.props.cmd = ((+c.props.cmd || 0) >= 100 ? 0 : (+c.props.cmd || 0) + 25); Props.render(); return true; } },
+  hint: c => c.props.ptype === 'variable' ? 'Cliquer : régler la cylindrée (' + c.props.cmd + ' %)' : 'Pompe ' + PTECH[c.props.tech || 'engr'] + ' — ' + PTYPES[c.props.ptype || 'fixe'],
+  draw(ctx, c, S) {
+    const t = c.props.ptype || 'fixe', s = st(c), run = S && this.speed(c) > 0 && !s.dry; ctx.strokeStyle = INK; ctx.lineWidth = 1.6;
+    D.line(ctx, [40, 0, 40, 30]); D.line(ctx, [40, 70, 40, 100]);
+    D.circle(ctx, 40, 50, 20, run ? '#dbeafe' : '#fff'); D.tri(ctx, 40, 35, 5, 'u', INK);
+    D.line(ctx, [20, 50, 4, 50]); D.line(ctx, [8, 44, 8, 56]); D.line(ctx, [4, 44, 4, 56]); // arbre d'entraînement
+    if (run) { const a = (S.t * 8) % (Math.PI * 2); D.line(ctx, [40 + Math.cos(a) * 9, 50 + Math.sin(a) * 9, 40 - Math.cos(a) * 9, 50 - Math.sin(a) * 9]); ctx.beginPath(); ctx.arc(40, 50, 26, -0.6, 0.6); ctx.stroke(); }
+    if (t !== 'fixe') D.arrow(ctx, 22, 70, 60, 28, 5);
+    if (t === 'regp' || t === 'ls') { D.dash(ctx, 1); D.line(ctx, [40, 12, 66, 12, 66, 22]); D.dash(ctx, 0); D.rect(ctx, 60, 22, 12, 9, '#fff'); D.arrow(ctx, 60, 27, 54, 32, 3); D.text(ctx, t === 'ls' ? 'LS' : 'p', 76, 8, 8, '#475569', 'center', true); }
+    if (compPorts(c).some(p => p.id === 'L')) { D.dash(ctx, 1); D.line(ctx, [52, 66, 52, 74, 80, 74]); D.dash(ctx, 0); D.text(ctx, 'L', 74, 82, 8, '#64748b'); }
+    if (t === 'variable') D.text(ctx, (c.props.cmd | 0) + '%', 76, 50, 8, '#1d4ed8', 'right', true);
+    D.text(ctx, 'P', 48, 6, 8, '#64748b'); D.text(ctx, 'S', 48, 94, 8, '#64748b');
+    if (S && s.dry && (Date.now() / 250 | 0) % 2) D.text(ctx, '!', 26, 86, 12, '#dc2626', 'center', true);
+  },
+  probe(c, S) {
+    const v = this.srcVal(c), o = { 'Type': 'Pompe ' + PTECH[c.props.tech || 'engr'] + ' — ' + PTYPES[c.props.ptype || 'fixe'], 'Régime': fmt(v.nr, 0) + ' tr/min', 'Débit (Cyl × N / 1000 × ηv)': fmt(v.q, 1) + ' L/min', 'Pression maxi admissible': c.props.padm + ' bar' };
+    if (v.reg != null) o['Consigne régulateur'] = v.reg + ' bar'; if (v.ls != null) o['Stand-by LS'] = v.ls + ' bar (cut-off ' + v.p + ' bar)';
+    if (S) { const r = S.root(c, 'P'), p = S.P(c, 'P'); o['Pression refoulement'] = fmt(p, 1) + ' bar'; o['Débit refoulé'] = fmt(S.flow.get(r) || 0, 1) + ' L/min'; o['Puissance hydraulique Q×p/600'] = fmt((S.flow.get(r) || 0) * p / 600, 2) + ' kW'; o['Aspiration'] = st(c).dry ? 'NON RELIÉE AU RÉSERVOIR' : 'alimentée'; }
+    return o;
+  },
+  plot: (c, S) => S ? S.P(c, 'P') : 0, plotUnit: 'bar'
+});
 def('tank', { name: 'Retour réservoir', cat: 'Hydraulique', w: 60, h: 40, ports: [P('T', 30, 0, 'h')], noLabel: true,
   sources() { return [['T', 'tank']]; },
   draw(ctx) { ctx.strokeStyle = INK; ctx.lineWidth = 1.6; D.line(ctx, [30, 0, 30, 30]); D.line(ctx, [8, 18, 8, 34, 52, 34, 52, 18]); } });
@@ -605,16 +672,24 @@ def('valve', {
   sources(c) { return c.props.medium === 'hyd' ? [] : (vt(c).vent || []).map(p => [p, 'vent']); },
   // clic côté gauche / droit : bouton maintenu, levier à crans, ou commande manuelle de secours
   // (électro-aimant, pilotage, galet) tant que le clic est maintenu
-  pressSide(c, x) { const { w } = this.size(c); const side = x < w / 2 ? 'L' : 'R'; const a = c.props['a' + side]; return (a === 'spring' || a === 'none') ? null : side; },
+  // zone cliquable : boutons fixes sous les commandes + commandes à leur position animée (le tiroir glisse)
+  vShift(c) { return (vRest(c) - (st(c).pos ?? 1)) * BW; },
+  extraRects(c) { return [{ x: this.vShift(c), y: 0, w: this.size(c).w, h: 80 }]; },
+  pressSide(c, x, y) {
+    const { w } = this.size(c); let side;
+    if (y >= 62 && (x < aw(c, 'L') || x > w - aw(c, 'R'))) side = x < w / 2 ? 'L' : 'R';
+    else side = x < w / 2 + this.vShift(c) ? 'L' : 'R';
+    const a = c.props['a' + side]; return (a === 'spring' || a === 'none') ? null : side;
+  },
   press(c, x, y) {
     const s = st(c); if (!s.man) s.man = { L: false, R: false }; if (!s.ovr) s.ovr = { L: false, R: false };
-    const side = this.pressSide(c, x); if (!side) return; const a = c.props['a' + side];
+    const side = this.pressSide(c, x, y); if (!side) return; const a = c.props['a' + side];
     if (a === 'lever') { const o = side === 'L' ? 'R' : 'L'; s.man[side] = !s.man[side]; s.man[o] = false; return true; }
     if (a === 'button') { s.man[side] = true; s._held = ['man', side]; return true; }
     s.ovr[side] = true; s._held = ['ovr', side]; return true;
   },
   release(c) { const s = st(c); if (s._held) { s[s._held[0]][s._held[1]] = false; s._held = null; return true; } },
-  hint(c, x) { const side = this.pressSide(c, x); if (!side) return 'Rappel par ressort'; const a = c.props['a' + side], n = side === 'L' ? 'gauche' : 'droite'; if (a === 'lever') return 'Cliquer : basculer le levier ' + n; if (a === 'button') return 'Maintenir : bouton ' + n; if (a === 'sol' || hasA(c, side, 'sol')) return 'Maintenir : commande manuelle de l\'électro-aimant ' + (c.props['t' + side] || n); if (isPil(a)) return 'Maintenir : commande manuelle du pilotage ' + n; return 'Maintenir : actionner le galet ' + n; },
+  hint(c, x, y) { const side = this.pressSide(c, x, y); if (!side) return 'Rappel par ressort'; const a = c.props['a' + side], n = side === 'L' ? 'gauche' : 'droite'; if (a === 'lever') return 'Cliquer : basculer le levier ' + n; if (a === 'button') return 'Maintenir : bouton ' + n; if (a === 'sol' || hasA(c, side, 'sol')) return 'Maintenir : commande manuelle de l\'électro-aimant ' + (c.props['t' + side] || n); if (isPil(a)) return 'Maintenir : commande manuelle du pilotage ' + n; return 'Maintenir : actionner le galet ' + n; },
   draw(ctx, c, S) {
     const V = vt(c), nb = V.boxes.length, s = st(c), pos = s.pos ?? 1, AWL = aw(c, 'L'), w = this.size(c).w, hyd = c.props.medium === 'hyd';
     const shift = (vRest(c) - pos) * BW; // les cases glissent pour aligner la position active sur les orifices
@@ -644,6 +719,14 @@ def('valve', {
     ['L', 'R'].forEach(sd => { const i = acts(c, sd).findIndex(isPil); if (i < 0) return; const e = sd === 'L' ? AWL + shift - 15 - i * 24 : AWL + nb * BW + shift + 15 + i * 24; const pk = pilotKind(c, sd); ctx.strokeStyle = pk === 'h' ? '#b91c1c' : '#2563eb'; D.dash(ctx, 1); D.line(ctx, [sd === 'L' ? 0 : w, 40, e, 40]); D.dash(ctx, 0); });
     V.top.forEach(([id, x]) => D.text(ctx, id, x0r + x + 7, 9, 8, '#64748b'));
     V.bot.forEach(([id, x]) => D.text(ctx, id, x0r + x + 7, 72, 8, '#64748b'));
+    if (S) ['L', 'R'].forEach(sd => { // boutons de commande fixes, toujours au même endroit pendant l'animation
+      const a = c.props['a' + sd]; if (a === 'spring' || a === 'none') return;
+      const bw = aw(c, sd) - 6, bx = sd === 'L' ? 3 : w - 3 - bw, on = vActive(c, sd, S);
+      const lb = hasA(c, sd, 'sol') ? (c.props['t' + sd] || 'Y') : { button: 'BP', lever: 'Levier', roller: 'Galet', pilotP: 'Pilote', pilotH: 'Pilote', pilot: 'Pilote' }[a] || '';
+      ctx.save(); ctx.fillStyle = on ? '#f59e0b' : '#e0ecff'; ctx.strokeStyle = on ? '#b45309' : '#3b82f6'; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.roundRect(bx, 64, bw, 14, 4); ctx.fill(); ctx.stroke(); ctx.restore();
+      D.text(ctx, (sd === 'L' ? '◀ ' : '') + lb + (sd === 'R' ? ' ▶' : ''), bx + bw / 2, 71, 8, on ? '#fff' : '#1d4ed8', 'center', true);
+    });
   },
   probe: c => ({ 'Position': ['gauche (a)', 'repos (b)', 'droite (c)'][st(c).pos ?? 1] || '—' })
 });
@@ -1109,6 +1192,9 @@ const PALETTE = [
     ['motorf', 'Moteur pneumatique', { medium: 'pneu', tag: 'M1' }]]],
   ['Hydraulique', [
     ['pump'], ['pump', 'Groupe — pompe à cylindrée variable', { ptype: 'variable' }], ['pump', 'Groupe — pompe régulée en pression', { ptype: 'regp', disp: 40, pc: 100, pmax: 140 }], ['pump', 'Groupe — pompe load-sensing', { ptype: 'ls', disp: 45, n: 1800, pmax: 250 }], ['pump', 'Groupe — limiteur piloté (X)', { rpilot: true }], ['tank'],
+    ['hpump', 'Pompe seule — engrenages (fixe)', { ptype: 'fixe', tech: 'engr' }], ['hpump', 'Pompe seule — palettes (fixe)', { ptype: 'fixe', tech: 'pal', disp: 20, padm: 160 }],
+    ['hpump', 'Pompe seule — pistons axiaux variable (manuelle)', { ptype: 'variable', tech: 'pax', disp: 45, padm: 350 }], ['hpump', 'Pompe seule — régulée en pression', { ptype: 'regp', tech: 'pax', disp: 45, pc: 160, padm: 350 }],
+    ['hpump', 'Pompe seule — load-sensing', { ptype: 'ls', tech: 'pax', disp: 45, pc: 250, padm: 350 }], ['hpump', 'Pompe seule — pistons radiaux', { ptype: 'fixe', tech: 'prad', disp: 10, padm: 500 }], ['hpump', 'Pompe seule — à vis', { ptype: 'fixe', tech: 'vis', disp: 60, padm: 100 }],
     ['cyl', 'Vérin double effet', { medium: 'hyd', bore: 63, rod: 36, stroke: 300, load: 10000 }],
     ['cyl', 'Vérin simple effet', { medium: 'hyd', single: true, bore: 50, rod: 36, stroke: 200 }],
     ['valve', 'Distributeur 4/3 levier tandem', { vt: 'v43t', medium: 'hyd', aL: 'lever', aR: 'lever', tag: '1V1' }],
