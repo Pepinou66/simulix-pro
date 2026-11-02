@@ -4,8 +4,8 @@
   "version": "1.4.0",
   "description": "Simulix Pro : conception et simulation de systèmes automatisés : pneumatique, hydraulique, électrique, automate, logique",
   "main": "main.js",
-  "author": "Simulix",
-  "license": "UNLICENSED",
+  "author": "Pepinou66",
+  "license": "GPL-3.0-or-later",
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder --win --x64"

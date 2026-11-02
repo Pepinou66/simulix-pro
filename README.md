@@ -103,3 +103,13 @@ La publication d'une mise à jour suit un processus automatisé :
 L'installateur correspondant est alors généré sous le nom `Simulix-Pro-Setup-1.3.1.exe`.
 
 Les utilisateurs ayant déjà installé Simulix Pro sont ensuite informés de la disponibilité de cette nouvelle version grâce au système de mise à jour intégré.
+
+## Licence
+
+Simulix Pro est un logiciel libre, distribué sous licence **GNU GPL version 3 ou ultérieure** (GPL-3.0-or-later).
+
+Copyright © 2026 Pepinou66
+
+Vous pouvez utiliser, étudier, modifier et redistribuer ce logiciel, y compris dans une version modifiée,
+à condition que toute version redistribuée reste sous la même licence et soit accompagnée de son code source.
+Ce logiciel est fourni sans aucune garantie. Le texte complet de la licence se trouve dans le fichier [LICENSE](LICENSE).
