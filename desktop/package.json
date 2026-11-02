@@ -2,7 +2,7 @@
   "name": "simulix-pro",
   "productName": "Simulix Pro",
   "version": "1.2.0",
-  "description": "Simulix Pro — conception et simulation de systèmes automatisés : pneumatique, hydraulique, électrique, automate, logique",
+  "description": "Simulix Pro : conception et simulation de systèmes automatisés : pneumatique, hydraulique, électrique, automate, logique",
   "main": "main.js",
   "author": "Simulix",
   "license": "UNLICENSED",
