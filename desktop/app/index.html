@@ -1194,6 +1194,46 @@ def('filter', {
   },
   probe: c => ({ 'Indicateur de colmatage': c.fault === 'clog' ? 'ROUGE : élément à remplacer' + (c.props.kind === 'retour' ? ' (by-pass ouvert : huile non filtrée)' : '') : 'vert' })
 });
+/* Radiateur / refroidisseur (échangeur) : huile hydraulique ou air comprimé */
+const motRunning = tag => { const m = App.comps.find(o => o.props.tag === tag && (o.type === 'motor3' || o.type === 'motor')); if (!m) return null; const s = st(m); return m.type === 'motor3' ? Math.abs(s.n || 0) > 700 : !!s.on; };
+def('cooler', {
+  name: 'Radiateur / refroidisseur', cat: 'Appareils fluidiques', w: 80, h: 80, ports: [P('1', 40, 80, 'f', 'entrée'), P('2', 40, 0, 'f', 'sortie')],
+  defProps: { tag: '0E1', medium: 'hyd', cool: 'fan', kw: 3, mot: '', bypass: true },
+  fieldsFn: c => [TAGF, { k: 'medium', label: 'Fluide', type: 'sel', opts: ['hyd', 'pneu'], labels: ['Huile hydraulique (refroidisseur d\'huile)', 'Air comprimé (refroidisseur final / aftercooler)'] },
+    { k: 'cool', label: 'Refroidissement', type: 'sel', opts: ['air', 'fan', 'eau'], labels: ['Air — convection naturelle', 'Air — ventilateur électrique', 'Eau (échangeur à plaques / tubulaire)'] },
+    { k: 'kw', label: 'Puissance dissipée nominale (kW à ΔT 30 °C)', type: 'num', step: 0.5 },
+    ...(c.props.cool === 'fan' ? [{ k: 'mot', label: 'Moteur du ventilateur (repère, vide = toujours en marche)', type: 'text' }] : []),
+    ...(c.props.medium !== 'pneu' ? [{ k: 'bypass', label: 'Clapet by-pass de protection (taré ≈ 2 bar)', type: 'chk' }] : []), REFF],
+  catalog: [{ ref: 'Refroidisseur huile/air 1,5 kW 24 V DC', props: { medium: 'hyd', cool: 'fan', kw: 1.5 } }, { ref: 'Refroidisseur huile/air 5 kW 400 V', props: { medium: 'hyd', cool: 'fan', kw: 5 } }, { ref: 'Échangeur huile/eau à plaques 15 kW', props: { medium: 'hyd', cool: 'eau', kw: 15 } }, { ref: 'Refroidisseur final d\'air comprimé air/air', props: { medium: 'pneu', cool: 'fan', kw: 4 } }],
+  faults: [['clog', 'Faisceau encrassé (ailettes bouchées) : refroidissement réduit'], ['fan', 'Ventilateur / circulation d\'eau en panne'], ['block', 'Circuit interne bouché (perte de charge)']],
+  bom: c => (c.props.medium === 'pneu' ? 'Refroidisseur final d\'air comprimé ' : 'Refroidisseur d\'huile ') + (c.props.cool === 'eau' ? 'huile/eau ' : 'à air ') + c.props.kw + ' kW' + (c.props.cool === 'fan' ? ' avec ventilateur' : ''),
+  links(c) { return c.fault === 'block' ? (c.props.medium !== 'pneu' && c.props.bypass ? [['1', '2', 0.9]] : [['1', '2', 0.25]]) : [['1', '2']]; },
+  eff(c, S) { // puissance effective dissipée (kW à ΔT 30 °C)
+    let k = +c.props.kw || 0; if (c.props.cool === 'air') k *= 0.5;
+    if (c.props.cool !== 'air') { const run = c.props.cool === 'fan' && c.props.mot ? motRunning(c.props.mot) : true; if (c.fault === 'fan' || run === false) k *= c.props.cool === 'fan' ? 0.25 : 0.05; }
+    if (c.fault === 'clog') k *= 0.35; if (c.fault === 'block' && c.props.bypass && c.props.medium !== 'pneu') k *= 0.1;
+    const wired = q => App.wires.some(w => (w.a.c === c.id && w.a.p === q) || (w.b.c === c.id && w.b.p === q)); if (!wired('1') || !wired('2')) k = 0; return k;
+  },
+  draw(ctx, c, S) {
+    const k = S ? this.eff(c, S) : 0, run = S && k > 0; ctx.strokeStyle = INK; ctx.lineWidth = 1.6;
+    D.line(ctx, [40, 80, 40, 62]); D.line(ctx, [40, 18, 40, 0]);
+    ctx.beginPath(); ctx.moveTo(40, 18); ctx.lineTo(62, 40); ctx.lineTo(40, 62); ctx.lineTo(18, 40); ctx.closePath(); ctx.fillStyle = run ? '#e0f2fe' : '#fff'; ctx.fill(); ctx.stroke();
+    D.line(ctx, [18, 40, 62, 40]); D.arrow(ctx, 30, 40, 24, 32, 3); D.arrow(ctx, 50, 40, 56, 32, 3); // flèches sortantes : chaleur évacuée
+    if (c.props.cool === 'eau') { D.arrow(ctx, 62, 40, 78, 40, 4); D.text(ctx, 'eau', 70, 50, 7, '#0369a1'); }
+    if (c.props.cool === 'fan') { D.line(ctx, [62, 40, 70, 40]); D.circle(ctx, 74, 40, 6, '#fff'); D.text(ctx, 'M', 74, 40, 7, INK, 'center', true);
+      if (run) { const a = (S.t * 10) % (Math.PI * 2); ctx.strokeStyle = '#0369a1'; D.line(ctx, [70 + Math.cos(a) * 5, 22 + Math.sin(a) * 5, 70 - Math.cos(a) * 5, 22 - Math.sin(a) * 5]); D.line(ctx, [70 + Math.sin(a) * 5, 22 - Math.cos(a) * 5, 70 - Math.sin(a) * 5, 22 + Math.cos(a) * 5]); ctx.strokeStyle = INK; } }
+    if (c.props.medium !== 'pneu' && c.props.bypass) { D.line(ctx, [40, 72, 6, 72, 6, 30]); D.line(ctx, [6, 22, 6, 8, 40, 8]); D.circle(ctx, 6, 30, 3.5, '#fff'); D.line(ctx, [2, 24, 6, 32, 10, 24]); }
+    D.text(ctx, c.props.medium === 'pneu' ? 'air' : 'huile', 74, 76, 7, '#64748b', 'right');
+  },
+  probe(c, S) {
+    const k = this.eff(c, S), o = { 'Fluide': c.props.medium === 'pneu' ? 'air comprimé' : 'huile', 'Refroidissement': { air: 'convection naturelle', fan: 'ventilateur' + (c.props.mot ? ' (' + c.props.mot + (motRunning(c.props.mot) ? ' en marche' : ' ARRÊTÉ') + ')' : ''), eau: 'eau' }[c.props.cool], 'Puissance dissipée effective': fmt(k, 1) + ' kW à ΔT 30 °C' };
+    if (S) {
+      if (c.props.medium === 'pneu') { const tin = 80, tout = k > 0 ? Math.max(25 + 10, tin - 45 * Math.min(1, k / 4)) : tin; o['Température air entrée / sortie'] = tin + ' °C / ' + fmt(tout, 0) + ' °C'; o['Condensats'] = k > 0 ? 'condensation dans le refroidisseur → purger le séparateur' : 'air chaud et humide envoyé au réseau'; }
+      else o['Température huile'] = fmt(S.oilT, 1) + ' °C'; }
+    if (c.fault === 'block') o['Remarque'] = c.props.bypass && c.props.medium !== 'pneu' ? 'by-pass ouvert : l\'huile contourne le refroidisseur' : 'perte de charge importante';
+    return o;
+  }
+});
 def('relief', {
   name: 'Limiteur de pression (LP / anti-choc)', cat: 'Appareils de pression', w: 60, h: 80, ports: [P('P', 30, 80, 'h', 'P'), P('T', 30, 0, 'h', 'T')],
   portsFn(c) { const o = [P('P', 30, 80, 'h', 'P'), P('T', 30, 0, 'h', 'T')]; if (c.props.rpilot) o.push(P('X', 60, 40, 'h', 'X (pilotage à distance)')); return o; },
@@ -1496,7 +1536,7 @@ const PALETTE = [
     ['valve', 'Distributeur 4/3 centre Y (A et B→T)', { vt: 'v43f', medium: 'hyd', aL: 'sol', aR: 'sol', tL: 'Y1', tR: 'Y2' }],
     ['motorf', 'Moteur hydraulique', { medium: 'hyd' }], ['pumpvar']]],
   ['Appareils de pression', [['relief'], ['relief', 'Limiteur à action pilotée (orifice X)', { rpilot: true, set: 160, tag: '0V1' }], ['relief', 'Limiteur avec mise à vide électrique', { vtag: 'Y0', tag: '0V1' }], ['reducer'], ['seqv'], ['cbv']]],
-  ['Appareils fluidiques', [['filter'], ['throttle'], ['throttle', 'Limiteur bidirectionnel', { check: false }], ['check'], ['shuttle'], ['twopress'], ['pswitch']]],
+  ['Appareils fluidiques', [['filter'], ['cooler', 'Refroidisseur d\'huile (ventilé)', { medium: 'hyd', cool: 'fan' }], ['cooler', 'Échangeur huile / eau', { medium: 'hyd', cool: 'eau', kw: 15 }], ['cooler', 'Refroidisseur d\'air comprimé', { medium: 'pneu', cool: 'fan', kw: 4, tag: '0E2' }], ['throttle'], ['throttle', 'Limiteur bidirectionnel', { check: false }], ['check'], ['shuttle'], ['twopress'], ['pswitch']]],
   ['Électrique — commande', [['supply'], ['pb_no'], ['pb_nc'], ['sw_no'], ['estop'], ['coil'], ['k_no'], ['k_nc'], ['coil_t'], ['ls_no'], ['ls_nc'], ['prox'], ['sol'], ['lamp'], ['motor'], ['buzzer']]],
   ['Électrique — puissance', [['mains3'], ['mains3', 'Réseau triphasé 380 V', { U: '380' }], ['mains1'], ['transfo'], ['psu'], ['breaker'], ['breaker', 'Disjoncteur 1P+N', { poles: 2, In: 10 }], ['rcd'], ['rcd', 'Différentiel 4P 30 mA', { poles: 4 }], ['fuse'], ['kmp'], ['rth'], ['motor3'], ['motor', 'Moteur monophasé 230 V', { vnom: '230', power: 750, tag: 'M2' }], ['lamp', 'Voyant 230 V', { vnom: '230', power: 5 }], ['coil', 'Bobine de contacteur 230 V', { vnom: '230', tag: 'KM1', power: 8 }], ['coil', 'Bobine de contacteur 24 V', { tag: 'KM1', power: 5 }]]],
   ['Automate programmable', [['plc']]],
@@ -1739,10 +1779,10 @@ const Sim = {
     }
     // température de l'huile : échauffement par laminage, refroidissement naturel (réservoir, échangeur)
     let lamT = 0; for (const v of S.lam.values()) lamT += v;
-    if (App.comps.some(c => c.type === 'pump' || c.type === 'hpump' || c.type === 'pumpvar')) { S.oilT += dt * (lamT * 0.12 - (S.oilT - 25) * 0.01); S.visc = 46 * Math.pow(2, -(S.oilT - 40) / 10); }
+    if (App.comps.some(c => c.type === 'pump' || c.type === 'hpump' || c.type === 'pumpvar')) { let cool = 0; for (const c of App.comps) if (c.type === 'cooler' && c.props.medium !== 'pneu') cool += DEFS.cooler.eff(c, S); S.oilT += dt * (lamT * 0.12 - (S.oilT - 25) * 0.01 - cool * 0.12 * clamp((S.oilT - 25) / 30, 0, 1.5)); S.visc = 46 * Math.pow(2, -(S.oilT - 40) / 10); }
     const rupt = [...S.net.values()].find(i => i.rupt && i.src && i.med === 'h');
     if (rupt) S.banner = '⚠ Rupture de flexible sous pression : risque d\'injection d\'huile sous la peau dès 20 bar — arrêter la pompe';
-    else if (S.oilT > 80 && !Object.keys(S.trip).length) S.banner = '🌡 Huile à ' + fmt(S.oilT, 0) + ' °C : échauffement par laminage au limiteur (viscosité ' + fmt(S.visc, 1) + ' cSt)';
+    else if (S.oilT > 80 && !Object.keys(S.trip).length) S.banner = '🌡 Huile à ' + fmt(S.oilT, 0) + ' °C : échauffement par laminage au limiteur (viscosité ' + fmt(S.visc, 1) + ' cSt)' + (App.comps.some(c => c.type === 'cooler' && c.props.medium !== 'pneu') ? ' — vérifier le refroidisseur' : ' — prévoir un refroidisseur');
     // mémorise les pressions côté actionneurs
     S._lastP = new Map();
     for (const c of App.comps) if (DEFS[c.type].isActuator) for (const p of compPorts(c)) S._lastP.set(K(c, p.id), S.P(c, p.id));
@@ -2141,7 +2181,7 @@ const App = {
   serialize() {
     return JSON.stringify({ app: 'Simulix Pro', version: 1, project: this.project, opts: this.opts, sheets: this.sheets, hideFaults: this.hideFaults, lib: this.lib,
       comps: this.comps.map(c => ({ id: c.id, type: c.type, x: c.x, y: c.y, rot: c.rot || 0, sheet: c.sheet || 0, props: c.props, fault: c.fault || null })),
-      wires: this.wires.map(w => ({ id: w.id, a: w.a, b: w.b, kind: w.kind, mo: w.mo ?? null, cut: !!w.cut, name: w.name || '', ref: w.ref || '', color: w.color || '', keepColor: !!w.keepColor })) });
+      wires: this.wires.map(w => ({ id: w.id, a: w.a, b: w.b, kind: w.kind, mo: w.mo ?? null, route: w.route ? { o: w.route.o, v: [...w.route.v] } : null, cut: !!w.cut, name: w.name || '', ref: w.ref || '', color: w.color || '', keepColor: !!w.keepColor })) });
   },
   load(json, keepHist) {
     const o = typeof json === 'string' ? JSON.parse(json) : json;
@@ -2193,7 +2233,8 @@ const App = {
     if (!this.clip || Sim.S) return; const map = {}; this.sel.clear();
     if (at && this.clip.comps.length) { const mx = Math.min(...this.clip.comps.map(c => c.x)), my = Math.min(...this.clip.comps.map(c => c.y)); this.clip.comps.forEach(c => { c.x += snap(at.x - mx) - 40; c.y += snap(at.y - my) - 40; }); }
     this.clip.comps.forEach(c0 => { const c = JSON.parse(JSON.stringify(c0)); map[c.id] = c.id = this.uid(); c.x += 40; c.y += 40; c.sheet = this.sheet; c.state = {}; if (c.props.tag && !NOAUTOTAG.includes(c.type)) c.props.tag = this.autoTag(c.type, c.props.tag); this.comps.push(c); this.sel.add(c.id); });
-    this.clip.wires.forEach(w => this.wires.push({ ...w, id: this.uid(), a: { c: map[w.a.c], p: w.a.p }, b: { c: map[w.b.c], p: w.b.p } }));
+    const off = {}; this.clip.comps.forEach(c => { const o = this.byId(map[c.id]); off[c.id] = [o.x - c.x, o.y - c.y]; });
+    this.clip.wires.forEach(w => { const d = off[w.a.c] || [0, 0]; this.wires.push({ ...w, id: this.uid(), a: { c: map[w.a.c], p: w.a.p }, b: { c: map[w.b.c], p: w.b.p }, route: w.route ? shiftRoute(w.route, d[0], d[1]) : null, mo: null }); });
     this.clip.comps.forEach(c => { c.x += 40; c.y += 40; }); this.changed();
   },
   dup() { this.copy(); this.paste(); },
@@ -2223,12 +2264,27 @@ function wirePts(w) {
   const A = portRef(w.a), B = portRef(w.b); if (!A || !B) return null;
   const st_ = (P, l) => ({ x: P.x + (P.d === 'r' ? l : P.d === 'l' ? -l : 0), y: P.y + (P.d === 'd' ? l : P.d === 'u' ? -l : 0) });
   const s1 = st_(A, 10), s2 = st_(B, 10), va = A.d === 'u' || A.d === 'd', vb = B.d === 'u' || B.d === 'd';
+  if (w.route) { // tracé libre : segments orthogonaux alternés, chaque segment intermédiaire a sa coordonnée réglable
+    const R = w.route, n = R.v.length + 2, fl = o => o === 'v' ? 'h' : 'v', seg = [];
+    for (let k = 0; k < n; k++) { const o = k % 2 ? fl(R.o) : R.o, ref = k === 0 ? s1 : k === n - 1 ? s2 : null; seg.push({ o, c: ref ? (o === 'v' ? ref.x : ref.y) : R.v[k - 1] }); }
+    const mid = []; for (let k = 1; k < n; k++) { const a = seg[k - 1], b = seg[k]; mid.push(a.o === 'v' ? { x: a.c, y: b.c } : { x: b.c, y: a.c }); }
+    return { pts: [A, s1, ...mid, s2, B], seg, free: true };
+  }
   let mid;
   if (va && vb) { const my = w.mo ?? (s1.y + s2.y) / 2; mid = [{ x: s1.x, y: my }, { x: s2.x, y: my }]; }
   else if (!va && !vb) { const mx = w.mo ?? (s1.x + s2.x) / 2; mid = [{ x: mx, y: s1.y }, { x: mx, y: s2.y }]; }
   else if (va) mid = [{ x: s1.x, y: s2.y }]; else mid = [{ x: s2.x, y: s1.y }];
   return { pts: [A, s1, ...mid, s2, B], vert: va && vb, horiz: !va && !vb };
 }
+function routeOf(wp) { // convertit un tracé (auto) en tracé libre éditable
+  const L = wp.pts.slice(1, -1), seg = [];
+  for (let i = 0; i < L.length - 1; i++) { const a = L[i], b = L[i + 1]; if (Math.abs(a.x - b.x) < 0.01 && Math.abs(a.y - b.y) < 0.01) continue; const o = Math.abs(a.x - b.x) < 0.01 ? 'v' : 'h', c = o === 'v' ? a.x : a.y; if (seg.length && seg[seg.length - 1].o === o) continue; seg.push({ o, c }); }
+  if (!seg.length) seg.push({ o: 'v', c: L[0].x });
+  if (seg.length === 1) return { o: seg[0].o, v: [] };
+  return { o: seg[0].o, v: seg.slice(1, -1).map(q => q.c) };
+}
+function shiftRoute(r, dx, dy) { return { o: r.o, v: r.v.map((c, i) => { const o = (i + 1) % 2 ? (r.o === 'v' ? 'h' : 'v') : r.o; return c + (o === 'v' ? dx : dy); }) }; }
+function wireSegAt(w, p) { const wp = wirePts(w); if (!wp) return -1; const tol = 6 / App.view.s; let best = -1, bd = 1e9; for (let i = 0; i < wp.pts.length - 1; i++) { const d = distSeg(p, wp.pts[i], wp.pts[i + 1]); if (d < tol && d < bd) { bd = d; best = i; } } return best; }
 function distSeg(p, a, b) { const dx = b.x - a.x, dy = b.y - a.y, l = dx * dx + dy * dy; let t = l ? ((p.x - a.x) * dx + (p.y - a.y) * dy) / l : 0; t = clamp(t, 0, 1); return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy); }
 
 /* ===================== RENDU ===================== */
@@ -2408,7 +2464,7 @@ function hoverBox(c) { // boîte de survol : encombrement + zone animée éventu
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
 function hitPort(p) { const r = 9 / Math.max(App.view.s, .5); let best = null, bd = r; for (const c of App.sheetComps()) for (const q of compPorts(c)) { const w = portWorld(c, q), d = Math.hypot(w.x - p.x, w.y - p.y); if (d < bd) { bd = d; best = { c, p: q }; } } return best; }
-function hitWire(p) { const tol = 6 / App.view.s, ids = new Set(App.sheetComps().map(c => c.id)); for (const w of App.wires) { if (!ids.has(w.a.c)) continue; const wp = wirePts(w); if (!wp) continue; for (let i = 0; i < wp.pts.length - 1; i++) if (distSeg(p, wp.pts[i], wp.pts[i + 1]) < tol) return w; } return null; }
+function hitWire(p, px = 6) { const tol = px / App.view.s, ids = new Set(App.sheetComps().map(c => c.id)); for (const w of App.wires) { if (!ids.has(w.a.c)) continue; const wp = wirePts(w); if (!wp) continue; for (let i = 0; i < wp.pts.length - 1; i++) if (distSeg(p, wp.pts[i], wp.pts[i + 1]) < tol) return w; } return null; }
 cv.addEventListener('pointerdown', e => {
   cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
   if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 }; drag = null; rubber = null; return; }
@@ -2445,6 +2501,9 @@ cv.addEventListener('pointerdown', e => {
     finishWire(hp); return;
   }
   if (App.wiring) { App.wiring = null; return; }
+  { // un segment de liaison passant au-dessus d'un composant reste saisissable (sauf les petits départs collés aux orifices)
+    const wq = App.tool !== 'pan' && hitWire(p, 4); if (wq) { const j = wireSegAt(wq, p), n = wirePts(wq).pts.length; if (j > 0 && j < n - 2) { App.selWire = wq.id; App.sel.clear(); Props.render(); drag = { mode: 'wire', w: wq, j, p0: p, moved: false }; return; } }
+  }
   const c = hitComp(p);
   if (c && App.tool !== 'pan') {
     const dbl = lastTap.id === c.id && now - lastTap.t < 350; lastTap = { t: now, id: c.id };
@@ -2452,11 +2511,11 @@ cv.addEventListener('pointerdown', e => {
     if (e.shiftKey || e.ctrlKey) { App.sel.has(c.id) ? App.sel.delete(c.id) : App.sel.add(c.id); }
     else if (!App.sel.has(c.id)) App.sel = new Set([c.id]);
     App.selWire = null; Props.render();
-    drag = { mode: 'move', p0: p, orig: [...App.sel].map(id => { const o = App.byId(id); return [o, o.x, o.y]; }), moved: false };
+    drag = { mode: 'move', p0: p, orig: [...App.sel].map(id => { const o = App.byId(id); return [o, o.x, o.y]; }), wr: App.wires.filter(w => w.route && App.sel.has(w.a.c) && App.sel.has(w.b.c)).map(w => [w, { o: w.route.o, v: [...w.route.v] }]), moved: false };
     return;
   }
   const w = App.tool !== 'pan' && hitWire(p);
-  if (w) { App.selWire = w.id; App.sel.clear(); Props.render(); const wp = wirePts(w); drag = { mode: 'wire', w, vert: wp.vert, horiz: wp.horiz, moved: false }; return; }
+  if (w) { App.selWire = w.id; App.sel.clear(); Props.render(); drag = { mode: 'wire', w, j: wireSegAt(w, p), p0: p, moved: false }; return; }
   App.sel.clear(); App.selWire = null; Props.render();
   if (App.tool === 'pan' || e.pointerType === 'touch') drag = { mode: 'pan', sx: e.offsetX, sy: e.offsetY, ox: App.view.ox, oy: App.view.oy };
   else { rubber = { x0: p.x, y0: p.y, x1: p.x, y1: p.y }; drag = { mode: 'rubber' }; }
@@ -2479,9 +2538,21 @@ cv.addEventListener('pointermove', e => {
   if (!drag) hover(p, e);
   if (!drag) return;
   if (drag.mode === 'pan') { App.view.ox = drag.ox + e.offsetX - drag.sx; App.view.oy = drag.oy + e.offsetY - drag.sy; }
-  if (drag.mode === 'move') { const dx = p.x - drag.p0.x, dy = p.y - drag.p0.y; if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true; if (drag.moved) drag.orig.forEach(([o, x, y]) => { o.x = snap(x + dx); o.y = snap(y + dy); }); }
+  if (drag.mode === 'move') { const dx = p.x - drag.p0.x, dy = p.y - drag.p0.y; if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true; if (drag.moved) { drag.orig.forEach(([o, x, y]) => { o.x = snap(x + dx); o.y = snap(y + dy); }); const [o0, x0, y0] = drag.orig[0] || []; if (o0) (drag.wr || []).forEach(([w, r]) => { w.route = shiftRoute(r, o0.x - x0, o0.y - y0); }); } }
   if (drag.mode === 'label') { const dx = p.x - drag.p0.x, dy = p.y - drag.p0.y; if (Math.abs(dx) + Math.abs(dy) > 2) { drag.moved = true; drag.c.props.labPos = 'free'; drag.c.props.labDx = Math.round(drag.dx0 + dx); drag.c.props.labDy = Math.round(drag.dy0 + dy); } }
-  if (drag.mode === 'wire') { if (drag.vert) drag.w.mo = snap(p.y); else if (drag.horiz) drag.w.mo = snap(p.x); drag.moved = true; }
+  if (drag.mode === 'wire') {
+    const w = drag.w;
+    if (drag.k == null && Math.hypot(p.x - drag.p0.x, p.y - drag.p0.y) * App.view.s < 4) return;
+    if (drag.k == null) { // premier déplacement : on passe en tracé libre et on choisit le segment saisi
+      const wp = wirePts(w); if (!wp) return; const nP = wp.pts.length; let j = drag.j; if (j < 0) return;
+      if (!w.route) { w.route = routeOf(wp); const j2 = wireSegAt(w, drag.p0 || p); j = j2 >= 0 ? j2 : j; }
+      let n = w.route.v.length + 2, k = clamp(j - 1, 0, n - 1); const fl = o => o === 'v' ? 'h' : 'v', W = wirePts(w);
+      if (k === 0) { const c0 = W.seg[0].c; w.route = { o: fl(w.route.o), v: [c0, ...w.route.v] }; k = 1; n++; }
+      if (k === n - 1) { w.route.v.push(W.seg[n - 1].c); }
+      drag.k = k; w.mo = null;
+    }
+    const o = drag.k % 2 ? (w.route.o === 'v' ? 'h' : 'v') : w.route.o; w.route.v[drag.k - 1] = snap(o === 'v' ? p.x : p.y); drag.moved = true;
+  }
   if (drag.mode === 'rubber') { rubber.x1 = p.x; rubber.y1 = p.y; }
 });
 const tipEl = () => $('#tip');
@@ -2559,7 +2630,7 @@ const Ctx = {
       App.selWire = w.id; App.sel.clear(); const fl = w.kind !== 'e' && w.kind !== 'l' && w.kind !== 'x';
       hd('Liaison ' + kname(w.kind));
       if (!App.hideFaults) it(w.cut ? (fl ? '✔ Remplacer le flexible' : '✔ Réparer le fil') : (fl ? '💥 Simuler une rupture de flexible' : '✂ Simuler un fil coupé'), () => { w.cut = !w.cut; App.changed(); });
-      it('↺ Tracé automatique', () => { w.mo = null; App.changed(); }, !!S);
+      it('↺ Tracé automatique', () => { w.mo = null; w.route = null; App.changed(); }, !!S);
       it('🗑 Supprimer la liaison', () => App.delSel(), !!S);
     } else {
       hd('Folio ' + (App.sheet + 1) + ' — ' + App.sheets[App.sheet].name);
@@ -2739,7 +2810,7 @@ const Props = {
     if (!App.hideFaults) h += `<button class="btn" id="wCut">${w.cut ? (fl ? '✔ Remplacer le flexible' : '✔ Réparer le fil') : (fl ? '💥 Simuler une rupture de flexible' : '✂ Simuler un fil coupé')}</button>`;
     else h += `<button class="btn" id="wRep">🔎 Signaler ${fl ? 'ce flexible comme rompu' : 'ce fil comme coupé'}</button>`;
     if (!Sim.S) h += `<button class="btn" id="wReset">Tracé automatique</button><button class="btn dng" onclick="App.delSel()">🗑 Supprimer</button>`;
-    h += `</div><p class="hint">Faites glisser un fil pour déplacer son segment central.</p></div>`;
+    h += `</div><p class="hint">Faites glisser n'importe quel segment (horizontal ou vertical) pour le déplacer ; un segment collé à un orifice crée un nouveau coude.</p></div>`;
     el.innerHTML = h;
     const cut = $('#wCut'); if (cut) cut.onclick = () => { w.cut = !w.cut; App.changed(); };
     $('#wName').onchange = e => { w.name = e.target.value.trim(); App.changed(); };
@@ -2747,7 +2818,7 @@ const Props = {
     $('#wCol').oninput = e => { w.color = e.target.value; }; $('#wCol').onchange = () => App.changed();
     $('#wColAuto').onclick = () => { w.color = ''; App.changed(); };
     $('#wKeep').onchange = e => { w.keepColor = e.target.checked; App.changed(); };
-    const rs = $('#wReset'); if (rs) rs.onclick = () => { w.mo = null; App.changed(); };
+    const rs = $('#wReset'); if (rs) rs.onclick = () => { w.mo = null; w.route = null; App.changed(); };
     const rp = $('#wRep'); if (rp) rp.onclick = () => Trouble.report(null, w);
   },
   renderProject(el) {

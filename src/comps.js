@@ -910,6 +910,46 @@ def('filter', {
   },
   probe: c => ({ 'Indicateur de colmatage': c.fault === 'clog' ? 'ROUGE : élément à remplacer' + (c.props.kind === 'retour' ? ' (by-pass ouvert : huile non filtrée)' : '') : 'vert' })
 });
+/* Radiateur / refroidisseur (échangeur) : huile hydraulique ou air comprimé */
+const motRunning = tag => { const m = App.comps.find(o => o.props.tag === tag && (o.type === 'motor3' || o.type === 'motor')); if (!m) return null; const s = st(m); return m.type === 'motor3' ? Math.abs(s.n || 0) > 700 : !!s.on; };
+def('cooler', {
+  name: 'Radiateur / refroidisseur', cat: 'Appareils fluidiques', w: 80, h: 80, ports: [P('1', 40, 80, 'f', 'entrée'), P('2', 40, 0, 'f', 'sortie')],
+  defProps: { tag: '0E1', medium: 'hyd', cool: 'fan', kw: 3, mot: '', bypass: true },
+  fieldsFn: c => [TAGF, { k: 'medium', label: 'Fluide', type: 'sel', opts: ['hyd', 'pneu'], labels: ['Huile hydraulique (refroidisseur d\'huile)', 'Air comprimé (refroidisseur final / aftercooler)'] },
+    { k: 'cool', label: 'Refroidissement', type: 'sel', opts: ['air', 'fan', 'eau'], labels: ['Air — convection naturelle', 'Air — ventilateur électrique', 'Eau (échangeur à plaques / tubulaire)'] },
+    { k: 'kw', label: 'Puissance dissipée nominale (kW à ΔT 30 °C)', type: 'num', step: 0.5 },
+    ...(c.props.cool === 'fan' ? [{ k: 'mot', label: 'Moteur du ventilateur (repère, vide = toujours en marche)', type: 'text' }] : []),
+    ...(c.props.medium !== 'pneu' ? [{ k: 'bypass', label: 'Clapet by-pass de protection (taré ≈ 2 bar)', type: 'chk' }] : []), REFF],
+  catalog: [{ ref: 'Refroidisseur huile/air 1,5 kW 24 V DC', props: { medium: 'hyd', cool: 'fan', kw: 1.5 } }, { ref: 'Refroidisseur huile/air 5 kW 400 V', props: { medium: 'hyd', cool: 'fan', kw: 5 } }, { ref: 'Échangeur huile/eau à plaques 15 kW', props: { medium: 'hyd', cool: 'eau', kw: 15 } }, { ref: 'Refroidisseur final d\'air comprimé air/air', props: { medium: 'pneu', cool: 'fan', kw: 4 } }],
+  faults: [['clog', 'Faisceau encrassé (ailettes bouchées) : refroidissement réduit'], ['fan', 'Ventilateur / circulation d\'eau en panne'], ['block', 'Circuit interne bouché (perte de charge)']],
+  bom: c => (c.props.medium === 'pneu' ? 'Refroidisseur final d\'air comprimé ' : 'Refroidisseur d\'huile ') + (c.props.cool === 'eau' ? 'huile/eau ' : 'à air ') + c.props.kw + ' kW' + (c.props.cool === 'fan' ? ' avec ventilateur' : ''),
+  links(c) { return c.fault === 'block' ? (c.props.medium !== 'pneu' && c.props.bypass ? [['1', '2', 0.9]] : [['1', '2', 0.25]]) : [['1', '2']]; },
+  eff(c, S) { // puissance effective dissipée (kW à ΔT 30 °C)
+    let k = +c.props.kw || 0; if (c.props.cool === 'air') k *= 0.5;
+    if (c.props.cool !== 'air') { const run = c.props.cool === 'fan' && c.props.mot ? motRunning(c.props.mot) : true; if (c.fault === 'fan' || run === false) k *= c.props.cool === 'fan' ? 0.25 : 0.05; }
+    if (c.fault === 'clog') k *= 0.35; if (c.fault === 'block' && c.props.bypass && c.props.medium !== 'pneu') k *= 0.1;
+    const wired = q => App.wires.some(w => (w.a.c === c.id && w.a.p === q) || (w.b.c === c.id && w.b.p === q)); if (!wired('1') || !wired('2')) k = 0; return k;
+  },
+  draw(ctx, c, S) {
+    const k = S ? this.eff(c, S) : 0, run = S && k > 0; ctx.strokeStyle = INK; ctx.lineWidth = 1.6;
+    D.line(ctx, [40, 80, 40, 62]); D.line(ctx, [40, 18, 40, 0]);
+    ctx.beginPath(); ctx.moveTo(40, 18); ctx.lineTo(62, 40); ctx.lineTo(40, 62); ctx.lineTo(18, 40); ctx.closePath(); ctx.fillStyle = run ? '#e0f2fe' : '#fff'; ctx.fill(); ctx.stroke();
+    D.line(ctx, [18, 40, 62, 40]); D.arrow(ctx, 30, 40, 24, 32, 3); D.arrow(ctx, 50, 40, 56, 32, 3); // flèches sortantes : chaleur évacuée
+    if (c.props.cool === 'eau') { D.arrow(ctx, 62, 40, 78, 40, 4); D.text(ctx, 'eau', 70, 50, 7, '#0369a1'); }
+    if (c.props.cool === 'fan') { D.line(ctx, [62, 40, 70, 40]); D.circle(ctx, 74, 40, 6, '#fff'); D.text(ctx, 'M', 74, 40, 7, INK, 'center', true);
+      if (run) { const a = (S.t * 10) % (Math.PI * 2); ctx.strokeStyle = '#0369a1'; D.line(ctx, [70 + Math.cos(a) * 5, 22 + Math.sin(a) * 5, 70 - Math.cos(a) * 5, 22 - Math.sin(a) * 5]); D.line(ctx, [70 + Math.sin(a) * 5, 22 - Math.cos(a) * 5, 70 - Math.sin(a) * 5, 22 + Math.cos(a) * 5]); ctx.strokeStyle = INK; } }
+    if (c.props.medium !== 'pneu' && c.props.bypass) { D.line(ctx, [40, 72, 6, 72, 6, 30]); D.line(ctx, [6, 22, 6, 8, 40, 8]); D.circle(ctx, 6, 30, 3.5, '#fff'); D.line(ctx, [2, 24, 6, 32, 10, 24]); }
+    D.text(ctx, c.props.medium === 'pneu' ? 'air' : 'huile', 74, 76, 7, '#64748b', 'right');
+  },
+  probe(c, S) {
+    const k = this.eff(c, S), o = { 'Fluide': c.props.medium === 'pneu' ? 'air comprimé' : 'huile', 'Refroidissement': { air: 'convection naturelle', fan: 'ventilateur' + (c.props.mot ? ' (' + c.props.mot + (motRunning(c.props.mot) ? ' en marche' : ' ARRÊTÉ') + ')' : ''), eau: 'eau' }[c.props.cool], 'Puissance dissipée effective': fmt(k, 1) + ' kW à ΔT 30 °C' };
+    if (S) {
+      if (c.props.medium === 'pneu') { const tin = 80, tout = k > 0 ? Math.max(25 + 10, tin - 45 * Math.min(1, k / 4)) : tin; o['Température air entrée / sortie'] = tin + ' °C / ' + fmt(tout, 0) + ' °C'; o['Condensats'] = k > 0 ? 'condensation dans le refroidisseur → purger le séparateur' : 'air chaud et humide envoyé au réseau'; }
+      else o['Température huile'] = fmt(S.oilT, 1) + ' °C'; }
+    if (c.fault === 'block') o['Remarque'] = c.props.bypass && c.props.medium !== 'pneu' ? 'by-pass ouvert : l\'huile contourne le refroidisseur' : 'perte de charge importante';
+    return o;
+  }
+});
 def('relief', {
   name: 'Limiteur de pression (LP / anti-choc)', cat: 'Appareils de pression', w: 60, h: 80, ports: [P('P', 30, 80, 'h', 'P'), P('T', 30, 0, 'h', 'T')],
   portsFn(c) { const o = [P('P', 30, 80, 'h', 'P'), P('T', 30, 0, 'h', 'T')]; if (c.props.rpilot) o.push(P('X', 60, 40, 'h', 'X (pilotage à distance)')); return o; },
@@ -1212,7 +1252,7 @@ const PALETTE = [
     ['valve', 'Distributeur 4/3 centre Y (A et B→T)', { vt: 'v43f', medium: 'hyd', aL: 'sol', aR: 'sol', tL: 'Y1', tR: 'Y2' }],
     ['motorf', 'Moteur hydraulique', { medium: 'hyd' }], ['pumpvar']]],
   ['Appareils de pression', [['relief'], ['relief', 'Limiteur à action pilotée (orifice X)', { rpilot: true, set: 160, tag: '0V1' }], ['relief', 'Limiteur avec mise à vide électrique', { vtag: 'Y0', tag: '0V1' }], ['reducer'], ['seqv'], ['cbv']]],
-  ['Appareils fluidiques', [['filter'], ['throttle'], ['throttle', 'Limiteur bidirectionnel', { check: false }], ['check'], ['shuttle'], ['twopress'], ['pswitch']]],
+  ['Appareils fluidiques', [['filter'], ['cooler', 'Refroidisseur d\'huile (ventilé)', { medium: 'hyd', cool: 'fan' }], ['cooler', 'Échangeur huile / eau', { medium: 'hyd', cool: 'eau', kw: 15 }], ['cooler', 'Refroidisseur d\'air comprimé', { medium: 'pneu', cool: 'fan', kw: 4, tag: '0E2' }], ['throttle'], ['throttle', 'Limiteur bidirectionnel', { check: false }], ['check'], ['shuttle'], ['twopress'], ['pswitch']]],
   ['Électrique — commande', [['supply'], ['pb_no'], ['pb_nc'], ['sw_no'], ['estop'], ['coil'], ['k_no'], ['k_nc'], ['coil_t'], ['ls_no'], ['ls_nc'], ['prox'], ['sol'], ['lamp'], ['motor'], ['buzzer']]],
   ['Électrique — puissance', [['mains3'], ['mains3', 'Réseau triphasé 380 V', { U: '380' }], ['mains1'], ['transfo'], ['psu'], ['breaker'], ['breaker', 'Disjoncteur 1P+N', { poles: 2, In: 10 }], ['rcd'], ['rcd', 'Différentiel 4P 30 mA', { poles: 4 }], ['fuse'], ['kmp'], ['rth'], ['motor3'], ['motor', 'Moteur monophasé 230 V', { vnom: '230', power: 750, tag: 'M2' }], ['lamp', 'Voyant 230 V', { vnom: '230', power: 5 }], ['coil', 'Bobine de contacteur 230 V', { vnom: '230', tag: 'KM1', power: 8 }], ['coil', 'Bobine de contacteur 24 V', { tag: 'KM1', power: 5 }]]],
   ['Automate programmable', [['plc']]],

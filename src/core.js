@@ -18,7 +18,7 @@ const App = {
   serialize() {
     return JSON.stringify({ app: 'Simulix Pro', version: 1, project: this.project, opts: this.opts, sheets: this.sheets, hideFaults: this.hideFaults, lib: this.lib,
       comps: this.comps.map(c => ({ id: c.id, type: c.type, x: c.x, y: c.y, rot: c.rot || 0, sheet: c.sheet || 0, props: c.props, fault: c.fault || null })),
-      wires: this.wires.map(w => ({ id: w.id, a: w.a, b: w.b, kind: w.kind, mo: w.mo ?? null, cut: !!w.cut, name: w.name || '', ref: w.ref || '', color: w.color || '', keepColor: !!w.keepColor })) });
+      wires: this.wires.map(w => ({ id: w.id, a: w.a, b: w.b, kind: w.kind, mo: w.mo ?? null, route: w.route ? { o: w.route.o, v: [...w.route.v] } : null, cut: !!w.cut, name: w.name || '', ref: w.ref || '', color: w.color || '', keepColor: !!w.keepColor })) });
   },
   load(json, keepHist) {
     const o = typeof json === 'string' ? JSON.parse(json) : json;
@@ -70,7 +70,8 @@ const App = {
     if (!this.clip || Sim.S) return; const map = {}; this.sel.clear();
     if (at && this.clip.comps.length) { const mx = Math.min(...this.clip.comps.map(c => c.x)), my = Math.min(...this.clip.comps.map(c => c.y)); this.clip.comps.forEach(c => { c.x += snap(at.x - mx) - 40; c.y += snap(at.y - my) - 40; }); }
     this.clip.comps.forEach(c0 => { const c = JSON.parse(JSON.stringify(c0)); map[c.id] = c.id = this.uid(); c.x += 40; c.y += 40; c.sheet = this.sheet; c.state = {}; if (c.props.tag && !NOAUTOTAG.includes(c.type)) c.props.tag = this.autoTag(c.type, c.props.tag); this.comps.push(c); this.sel.add(c.id); });
-    this.clip.wires.forEach(w => this.wires.push({ ...w, id: this.uid(), a: { c: map[w.a.c], p: w.a.p }, b: { c: map[w.b.c], p: w.b.p } }));
+    const off = {}; this.clip.comps.forEach(c => { const o = this.byId(map[c.id]); off[c.id] = [o.x - c.x, o.y - c.y]; });
+    this.clip.wires.forEach(w => { const d = off[w.a.c] || [0, 0]; this.wires.push({ ...w, id: this.uid(), a: { c: map[w.a.c], p: w.a.p }, b: { c: map[w.b.c], p: w.b.p }, route: w.route ? shiftRoute(w.route, d[0], d[1]) : null, mo: null }); });
     this.clip.comps.forEach(c => { c.x += 40; c.y += 40; }); this.changed();
   },
   dup() { this.copy(); this.paste(); },
@@ -100,12 +101,27 @@ function wirePts(w) {
   const A = portRef(w.a), B = portRef(w.b); if (!A || !B) return null;
   const st_ = (P, l) => ({ x: P.x + (P.d === 'r' ? l : P.d === 'l' ? -l : 0), y: P.y + (P.d === 'd' ? l : P.d === 'u' ? -l : 0) });
   const s1 = st_(A, 10), s2 = st_(B, 10), va = A.d === 'u' || A.d === 'd', vb = B.d === 'u' || B.d === 'd';
+  if (w.route) { // tracé libre : segments orthogonaux alternés, chaque segment intermédiaire a sa coordonnée réglable
+    const R = w.route, n = R.v.length + 2, fl = o => o === 'v' ? 'h' : 'v', seg = [];
+    for (let k = 0; k < n; k++) { const o = k % 2 ? fl(R.o) : R.o, ref = k === 0 ? s1 : k === n - 1 ? s2 : null; seg.push({ o, c: ref ? (o === 'v' ? ref.x : ref.y) : R.v[k - 1] }); }
+    const mid = []; for (let k = 1; k < n; k++) { const a = seg[k - 1], b = seg[k]; mid.push(a.o === 'v' ? { x: a.c, y: b.c } : { x: b.c, y: a.c }); }
+    return { pts: [A, s1, ...mid, s2, B], seg, free: true };
+  }
   let mid;
   if (va && vb) { const my = w.mo ?? (s1.y + s2.y) / 2; mid = [{ x: s1.x, y: my }, { x: s2.x, y: my }]; }
   else if (!va && !vb) { const mx = w.mo ?? (s1.x + s2.x) / 2; mid = [{ x: mx, y: s1.y }, { x: mx, y: s2.y }]; }
   else if (va) mid = [{ x: s1.x, y: s2.y }]; else mid = [{ x: s2.x, y: s1.y }];
   return { pts: [A, s1, ...mid, s2, B], vert: va && vb, horiz: !va && !vb };
 }
+function routeOf(wp) { // convertit un tracé (auto) en tracé libre éditable
+  const L = wp.pts.slice(1, -1), seg = [];
+  for (let i = 0; i < L.length - 1; i++) { const a = L[i], b = L[i + 1]; if (Math.abs(a.x - b.x) < 0.01 && Math.abs(a.y - b.y) < 0.01) continue; const o = Math.abs(a.x - b.x) < 0.01 ? 'v' : 'h', c = o === 'v' ? a.x : a.y; if (seg.length && seg[seg.length - 1].o === o) continue; seg.push({ o, c }); }
+  if (!seg.length) seg.push({ o: 'v', c: L[0].x });
+  if (seg.length === 1) return { o: seg[0].o, v: [] };
+  return { o: seg[0].o, v: seg.slice(1, -1).map(q => q.c) };
+}
+function shiftRoute(r, dx, dy) { return { o: r.o, v: r.v.map((c, i) => { const o = (i + 1) % 2 ? (r.o === 'v' ? 'h' : 'v') : r.o; return c + (o === 'v' ? dx : dy); }) }; }
+function wireSegAt(w, p) { const wp = wirePts(w); if (!wp) return -1; const tol = 6 / App.view.s; let best = -1, bd = 1e9; for (let i = 0; i < wp.pts.length - 1; i++) { const d = distSeg(p, wp.pts[i], wp.pts[i + 1]); if (d < tol && d < bd) { bd = d; best = i; } } return best; }
 function distSeg(p, a, b) { const dx = b.x - a.x, dy = b.y - a.y, l = dx * dx + dy * dy; let t = l ? ((p.x - a.x) * dx + (p.y - a.y) * dy) / l : 0; t = clamp(t, 0, 1); return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy); }
 
 /* ===================== RENDU ===================== */
@@ -285,7 +301,7 @@ function hoverBox(c) { // boîte de survol : encombrement + zone animée éventu
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
 function hitPort(p) { const r = 9 / Math.max(App.view.s, .5); let best = null, bd = r; for (const c of App.sheetComps()) for (const q of compPorts(c)) { const w = portWorld(c, q), d = Math.hypot(w.x - p.x, w.y - p.y); if (d < bd) { bd = d; best = { c, p: q }; } } return best; }
-function hitWire(p) { const tol = 6 / App.view.s, ids = new Set(App.sheetComps().map(c => c.id)); for (const w of App.wires) { if (!ids.has(w.a.c)) continue; const wp = wirePts(w); if (!wp) continue; for (let i = 0; i < wp.pts.length - 1; i++) if (distSeg(p, wp.pts[i], wp.pts[i + 1]) < tol) return w; } return null; }
+function hitWire(p, px = 6) { const tol = px / App.view.s, ids = new Set(App.sheetComps().map(c => c.id)); for (const w of App.wires) { if (!ids.has(w.a.c)) continue; const wp = wirePts(w); if (!wp) continue; for (let i = 0; i < wp.pts.length - 1; i++) if (distSeg(p, wp.pts[i], wp.pts[i + 1]) < tol) return w; } return null; }
 cv.addEventListener('pointerdown', e => {
   cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
   if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 }; drag = null; rubber = null; return; }
@@ -322,6 +338,9 @@ cv.addEventListener('pointerdown', e => {
     finishWire(hp); return;
   }
   if (App.wiring) { App.wiring = null; return; }
+  { // un segment de liaison passant au-dessus d'un composant reste saisissable (sauf les petits départs collés aux orifices)
+    const wq = App.tool !== 'pan' && hitWire(p, 4); if (wq) { const j = wireSegAt(wq, p), n = wirePts(wq).pts.length; if (j > 0 && j < n - 2) { App.selWire = wq.id; App.sel.clear(); Props.render(); drag = { mode: 'wire', w: wq, j, p0: p, moved: false }; return; } }
+  }
   const c = hitComp(p);
   if (c && App.tool !== 'pan') {
     const dbl = lastTap.id === c.id && now - lastTap.t < 350; lastTap = { t: now, id: c.id };
@@ -329,11 +348,11 @@ cv.addEventListener('pointerdown', e => {
     if (e.shiftKey || e.ctrlKey) { App.sel.has(c.id) ? App.sel.delete(c.id) : App.sel.add(c.id); }
     else if (!App.sel.has(c.id)) App.sel = new Set([c.id]);
     App.selWire = null; Props.render();
-    drag = { mode: 'move', p0: p, orig: [...App.sel].map(id => { const o = App.byId(id); return [o, o.x, o.y]; }), moved: false };
+    drag = { mode: 'move', p0: p, orig: [...App.sel].map(id => { const o = App.byId(id); return [o, o.x, o.y]; }), wr: App.wires.filter(w => w.route && App.sel.has(w.a.c) && App.sel.has(w.b.c)).map(w => [w, { o: w.route.o, v: [...w.route.v] }]), moved: false };
     return;
   }
   const w = App.tool !== 'pan' && hitWire(p);
-  if (w) { App.selWire = w.id; App.sel.clear(); Props.render(); const wp = wirePts(w); drag = { mode: 'wire', w, vert: wp.vert, horiz: wp.horiz, moved: false }; return; }
+  if (w) { App.selWire = w.id; App.sel.clear(); Props.render(); drag = { mode: 'wire', w, j: wireSegAt(w, p), p0: p, moved: false }; return; }
   App.sel.clear(); App.selWire = null; Props.render();
   if (App.tool === 'pan' || e.pointerType === 'touch') drag = { mode: 'pan', sx: e.offsetX, sy: e.offsetY, ox: App.view.ox, oy: App.view.oy };
   else { rubber = { x0: p.x, y0: p.y, x1: p.x, y1: p.y }; drag = { mode: 'rubber' }; }
@@ -356,9 +375,21 @@ cv.addEventListener('pointermove', e => {
   if (!drag) hover(p, e);
   if (!drag) return;
   if (drag.mode === 'pan') { App.view.ox = drag.ox + e.offsetX - drag.sx; App.view.oy = drag.oy + e.offsetY - drag.sy; }
-  if (drag.mode === 'move') { const dx = p.x - drag.p0.x, dy = p.y - drag.p0.y; if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true; if (drag.moved) drag.orig.forEach(([o, x, y]) => { o.x = snap(x + dx); o.y = snap(y + dy); }); }
+  if (drag.mode === 'move') { const dx = p.x - drag.p0.x, dy = p.y - drag.p0.y; if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true; if (drag.moved) { drag.orig.forEach(([o, x, y]) => { o.x = snap(x + dx); o.y = snap(y + dy); }); const [o0, x0, y0] = drag.orig[0] || []; if (o0) (drag.wr || []).forEach(([w, r]) => { w.route = shiftRoute(r, o0.x - x0, o0.y - y0); }); } }
   if (drag.mode === 'label') { const dx = p.x - drag.p0.x, dy = p.y - drag.p0.y; if (Math.abs(dx) + Math.abs(dy) > 2) { drag.moved = true; drag.c.props.labPos = 'free'; drag.c.props.labDx = Math.round(drag.dx0 + dx); drag.c.props.labDy = Math.round(drag.dy0 + dy); } }
-  if (drag.mode === 'wire') { if (drag.vert) drag.w.mo = snap(p.y); else if (drag.horiz) drag.w.mo = snap(p.x); drag.moved = true; }
+  if (drag.mode === 'wire') {
+    const w = drag.w;
+    if (drag.k == null && Math.hypot(p.x - drag.p0.x, p.y - drag.p0.y) * App.view.s < 4) return;
+    if (drag.k == null) { // premier déplacement : on passe en tracé libre et on choisit le segment saisi
+      const wp = wirePts(w); if (!wp) return; const nP = wp.pts.length; let j = drag.j; if (j < 0) return;
+      if (!w.route) { w.route = routeOf(wp); const j2 = wireSegAt(w, drag.p0 || p); j = j2 >= 0 ? j2 : j; }
+      let n = w.route.v.length + 2, k = clamp(j - 1, 0, n - 1); const fl = o => o === 'v' ? 'h' : 'v', W = wirePts(w);
+      if (k === 0) { const c0 = W.seg[0].c; w.route = { o: fl(w.route.o), v: [c0, ...w.route.v] }; k = 1; n++; }
+      if (k === n - 1) { w.route.v.push(W.seg[n - 1].c); }
+      drag.k = k; w.mo = null;
+    }
+    const o = drag.k % 2 ? (w.route.o === 'v' ? 'h' : 'v') : w.route.o; w.route.v[drag.k - 1] = snap(o === 'v' ? p.x : p.y); drag.moved = true;
+  }
   if (drag.mode === 'rubber') { rubber.x1 = p.x; rubber.y1 = p.y; }
 });
 const tipEl = () => $('#tip');
@@ -436,7 +467,7 @@ const Ctx = {
       App.selWire = w.id; App.sel.clear(); const fl = w.kind !== 'e' && w.kind !== 'l' && w.kind !== 'x';
       hd('Liaison ' + kname(w.kind));
       if (!App.hideFaults) it(w.cut ? (fl ? '✔ Remplacer le flexible' : '✔ Réparer le fil') : (fl ? '💥 Simuler une rupture de flexible' : '✂ Simuler un fil coupé'), () => { w.cut = !w.cut; App.changed(); });
-      it('↺ Tracé automatique', () => { w.mo = null; App.changed(); }, !!S);
+      it('↺ Tracé automatique', () => { w.mo = null; w.route = null; App.changed(); }, !!S);
       it('🗑 Supprimer la liaison', () => App.delSel(), !!S);
     } else {
       hd('Folio ' + (App.sheet + 1) + ' — ' + App.sheets[App.sheet].name);
@@ -616,7 +647,7 @@ const Props = {
     if (!App.hideFaults) h += `<button class="btn" id="wCut">${w.cut ? (fl ? '✔ Remplacer le flexible' : '✔ Réparer le fil') : (fl ? '💥 Simuler une rupture de flexible' : '✂ Simuler un fil coupé')}</button>`;
     else h += `<button class="btn" id="wRep">🔎 Signaler ${fl ? 'ce flexible comme rompu' : 'ce fil comme coupé'}</button>`;
     if (!Sim.S) h += `<button class="btn" id="wReset">Tracé automatique</button><button class="btn dng" onclick="App.delSel()">🗑 Supprimer</button>`;
-    h += `</div><p class="hint">Faites glisser un fil pour déplacer son segment central.</p></div>`;
+    h += `</div><p class="hint">Faites glisser n'importe quel segment (horizontal ou vertical) pour le déplacer ; un segment collé à un orifice crée un nouveau coude.</p></div>`;
     el.innerHTML = h;
     const cut = $('#wCut'); if (cut) cut.onclick = () => { w.cut = !w.cut; App.changed(); };
     $('#wName').onchange = e => { w.name = e.target.value.trim(); App.changed(); };
@@ -624,7 +655,7 @@ const Props = {
     $('#wCol').oninput = e => { w.color = e.target.value; }; $('#wCol').onchange = () => App.changed();
     $('#wColAuto').onclick = () => { w.color = ''; App.changed(); };
     $('#wKeep').onchange = e => { w.keepColor = e.target.checked; App.changed(); };
-    const rs = $('#wReset'); if (rs) rs.onclick = () => { w.mo = null; App.changed(); };
+    const rs = $('#wReset'); if (rs) rs.onclick = () => { w.mo = null; w.route = null; App.changed(); };
     const rp = $('#wRep'); if (rp) rp.onclick = () => Trouble.report(null, w);
   },
   renderProject(el) {
