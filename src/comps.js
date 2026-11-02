@@ -416,7 +416,7 @@ def('motor3', {
   plot: c => st(c).I || 0, plotUnit: 'A'
 });
 /* ---------- Connexions ---------- */
-def('node', { name: 'Nœud / jonction', cat: 'Connexions', w: 20, h: 20, ports: [P('n', 10, 10, 'x')], noLabel: true,
+def('node', { name: 'Nœud / jonction', cat: 'Connexions', w: 20, h: 20, ports: [{ ...P('n', 10, 10, 'x'), d: 'c' }], noLabel: true,
   draw(ctx) { ctx.fillStyle = INK; ctx.beginPath(); ctx.arc(10, 10, 3.5, 0, 7); ctx.fill(); } });
 def('offpage', {
   name: 'Renvoi de folio', cat: 'Connexions', w: 60, h: 40, ports: [P('n', 0, 20, 'x')], defProps: { tag: 'L+' }, noLabel: true,

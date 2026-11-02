@@ -86,7 +86,7 @@ function compPorts(c) {
 function portWorld(c, p) {
   const { w, h } = compSize(c), cx = c.x + w / 2, cy = c.y + h / 2; let dx = p.x - w / 2, dy = p.y - h / 2;
   for (let i = 0; i < (c.rot || 0); i++) { const t = dx; dx = -dy; dy = t; }
-  return { x: cx + dx, y: cy + dy, d: DIRS[(DIRS.indexOf(p.d) + (c.rot || 0)) % 4] };
+  return { x: cx + dx, y: cy + dy, d: p.d === 'c' ? 'c' : DIRS[(DIRS.indexOf(p.d) + (c.rot || 0)) % 4] };
 }
 function toLocal(c, x, y) {
   const { w, h } = compSize(c); let dx = x - (c.x + w / 2), dy = y - (c.y + h / 2);
@@ -343,9 +343,10 @@ cv.addEventListener('pointerdown', e => {
       if (!drag) drag = { mode: 'pan', sx: e.offsetX, sy: e.offsetY, ox: App.view.ox, oy: App.view.oy, moved: false };
       return;
     }
-    const w = hitWire(p); if (w) { App.selWire = w.id; App.sel.clear(); Props.render(); return; }
-    drag = { mode: 'pan', sx: e.offsetX, sy: e.offsetY, ox: App.view.ox, oy: App.view.oy }; return;
+    const w = hitWire(p); if (w) { App.selWire = App.selWire === w.id ? null : w.id; App.sel.clear(); Props.render(); return; }
+    drag = { mode: 'pan', sx: e.offsetX, sy: e.offsetY, ox: App.view.ox, oy: App.view.oy, desel: true }; return;
   }
+  if (App.placing && App.placing.type === 'node') { const w0 = hitWire(p); if (w0) { const c = splitWireAt(w0, p); App.sel = new Set([c.id]); App.selWire = null; if (!e.shiftKey) { App.placing = null; Pal.mark(); } App.changed(); return; } }
   if (App.placing) {
     const c = App.addComp(App.placing, p.x, p.y); App.sel = new Set([c.id]); App.selWire = null;
     if (!e.shiftKey) { App.placing = null; Pal.mark(); } App.changed(); return;
@@ -361,9 +362,13 @@ cv.addEventListener('pointerdown', e => {
     if (!App.wiring) { App.wiring = { c: hp.c.id, p: hp.p.id }; return; }
     finishWire(hp); return;
   }
-  if (App.wiring) { App.wiring = null; return; }
+  if (App.wiring) {
+    const w0 = hitWire(p); const A = portRef(App.wiring);
+    if (w0 && A && kindOk(A.p.k, w0.kind === 'e' ? 'e' : w0.kind) && !(w0.a.c === A.c.id && w0.a.p === A.p.id) && !(w0.b.c === A.c.id && w0.b.p === A.p.id)) { const nd = splitWireAt(w0, p); finishWire({ c: nd, p: compPorts(nd)[0] }); toast('Piquage créé sur la liaison'); return; }
+    App.wiring = null; return;
+  }
   { // un segment de liaison passant au-dessus d'un composant reste saisissable (sauf les petits départs collés aux orifices)
-    const wq = App.tool !== 'pan' && hitWire(p, 4); if (wq) { const j = wireSegAt(wq, p), n = wirePts(wq).pts.length; if (j > 0 && j < n - 2) { App.selWire = wq.id; App.sel.clear(); Props.render(); drag = { mode: 'wire', w: wq, j, p0: p, moved: false }; return; } }
+    const wq = App.tool !== 'pan' && hitWire(p, 4); if (wq) { const j = wireSegAt(wq, p), n = wirePts(wq).pts.length; if (j > 0 && j < n - 2) { const was = App.selWire === wq.id; App.selWire = wq.id; App.sel.clear(); Props.render(); drag = { mode: 'wire', w: wq, j, p0: p, moved: false, was }; return; } }
   }
   const c = hitComp(p);
   if (c && App.tool !== 'pan') {
@@ -376,11 +381,25 @@ cv.addEventListener('pointerdown', e => {
     return;
   }
   const w = App.tool !== 'pan' && hitWire(p);
-  if (w) { App.selWire = w.id; App.sel.clear(); Props.render(); drag = { mode: 'wire', w, j: wireSegAt(w, p), p0: p, moved: false }; return; }
+  if (w) { const was = App.selWire === w.id; App.selWire = w.id; App.sel.clear(); Props.render(); drag = { mode: 'wire', w, j: wireSegAt(w, p), p0: p, moved: false, was }; return; }
   App.sel.clear(); App.selWire = null; Props.render();
   if (App.tool === 'pan' || e.pointerType === 'touch') drag = { mode: 'pan', sx: e.offsetX, sy: e.offsetY, ox: App.view.ox, oy: App.view.oy };
   else { rubber = { x0: p.x, y0: p.y, x1: p.x, y1: p.y }; drag = { mode: 'rubber' }; }
 });
+// insère un nœud de jonction sur une liaison existante (piquage / té) en conservant le tracé
+function splitWireAt(w, p, node) {
+  const wp = wirePts(w); if (!wp) return null; const F = wp.pts, n = F.length;
+  let j = wireSegAt(w, p); if (j < 0) { let bd = 1e9; for (let i = 0; i < n - 1; i++) { const d = distSeg(p, F[i], F[i + 1]); if (d < bd) { bd = d; j = i; } } }
+  let pt; if (j <= 0) { j = 1; pt = { x: F[1].x, y: F[1].y }; } else if (j >= n - 2) { j = n - 3; pt = { x: F[n - 2].x, y: F[n - 2].y }; }
+  else { const a = F[j], b = F[j + 1]; pt = Math.abs(a.x - b.x) < 0.5 ? { x: a.x, y: clamp(snap(p.y), Math.min(a.y, b.y), Math.max(a.y, b.y)) } : { x: clamp(snap(p.x), Math.min(a.x, b.x), Math.max(a.x, b.x)), y: a.y }; }
+  if (!node) node = App.addComp({ type: 'node' }, pt.x, pt.y);
+  const { w: nw, h: nh } = compSize(node); node.x = pt.x - nw / 2; node.y = pt.y - nh / 2;
+  const r1 = routeOf({ pts: [...F.slice(0, j + 1), pt, pt] }), r2 = routeOf({ pts: [pt, pt, ...F.slice(j + 1)] });
+  const nr = { c: node.id, p: 'n' }, base = { kind: w.kind, mo: null, cut: false, name: w.name || '', ref: w.ref || '', color: w.color || '', keepColor: !!w.keepColor };
+  App.wires = App.wires.filter(x => x !== w);
+  App.wires.push({ ...base, id: App.uid(), a: w.a, b: nr, route: r1 }, { ...base, id: App.uid(), a: nr, b: w.b, route: r2, name: '' });
+  return node;
+}
 function finishWire(hp) {
   const a = portRef(App.wiring); App.wiring = null; if (!a) return;
   if (a.c === hp.c && a.p.id === hp.p.id) return;
@@ -444,9 +463,18 @@ cv.addEventListener('pointerleave', () => { App.hover = null; showTip(''); });
 function endPtr(e) {
   ptrs.delete(e.pointerId); if (ptrs.size < 2) pinch = null;
   if (!drag) return;
+  if (drag.mode === 'pan' && drag.desel && Math.hypot(e.offsetX - drag.sx, e.offsetY - drag.sy) < 5 && (App.selWire || App.sel.size)) { App.selWire = null; App.sel.clear(); Props.render(); }
   if (drag.mode === 'press') { const d = DEFS[drag.c.type]; if (d.release && d.release(drag.c)) Sim.settleNow(); }
-  if (drag.mode === 'move' && drag.moved) App.changed();
+  if (drag.mode === 'move' && drag.moved) {
+    if (drag.orig.length === 1 && drag.orig[0][0].type === 'node') { // nœud lâché sur une liaison : il s'y raccorde
+      const nd = drag.orig[0][0], pc = portWorld(nd, compPorts(nd)[0]);
+      const w0 = App.wires.find(w => w.a.c !== nd.id && w.b.c !== nd.id && App.byId(w.a.c)?.sheet === nd.sheet && (() => { const wp = wirePts(w); if (!wp) return false; for (let i = 1; i < wp.pts.length - 2; i++) if (distSeg(pc, wp.pts[i], wp.pts[i + 1]) < 6 / App.view.s) return true; return false; })());
+      if (w0) { splitWireAt(w0, pc, nd); toast('Nœud raccordé sur la liaison'); }
+    }
+    App.changed();
+  }
   if (drag.mode === 'wire' && drag.moved) App.changed();
+  else if (drag.mode === 'wire' && drag.was) { App.selWire = null; Props.render(); } // re-clic sur la liaison sélectionnée : désélection
   if (drag.mode === 'label' && drag.moved) App.changed();
   if (drag.mode === 'rubber' && rubber) {
     const x0 = Math.min(rubber.x0, rubber.x1), x1 = Math.max(rubber.x0, rubber.x1), y0 = Math.min(rubber.y0, rubber.y1), y1 = Math.max(rubber.y0, rubber.y1);
@@ -521,7 +549,7 @@ document.addEventListener('keydown', e => {
   const k = e.key.toLowerCase();
   if (k === 'delete' || k === 'backspace') { App.delSel(); e.preventDefault(); }
   else if (k === 'r' && !e.ctrlKey) App.rotSel();
-  else if (k === 'escape') { App.wiring = null; App.placing = null; Pal.mark(); }
+  else if (k === 'escape') { App.wiring = null; App.placing = null; Pal.mark(); if (App.selWire || App.sel.size) { App.selWire = null; App.sel.clear(); Props.render(); } }
   else if (e.ctrlKey && k === 'z') { App.undo(); e.preventDefault(); }
   else if (e.ctrlKey && k === 'y') { App.redo(); e.preventDefault(); }
   else if (e.ctrlKey && k === 'c') App.copy();
