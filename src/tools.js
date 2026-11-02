@@ -404,6 +404,7 @@ function initUI() {
   if (NATIVE && NATIVE.onMenu) NATIVE.onMenu(cmd => ({ new: () => Files.newProject(), open: () => Files.open(), save: () => Files.save(), pdf: () => Files.exportPDF(), png: () => Files.exportPNG(), run: () => Ctl.run(), stop: () => Ctl.stop(), help, eng: () => Eng.open(), updates: () => Updates.open() })[cmd]?.());
   Updates.init();
   if (NATIVE && NATIVE.onOpenFile) NATIVE.onOpenFile(t => Files.loadText(t));
+  View2.init();
   Pal.render(); Sheets.render(); View.resize();
   let loaded = false; const auto = store('simulix.autosave');
   if (auto) { try { App.load(auto); loaded = App.comps.length > 0; } catch (e) { } }

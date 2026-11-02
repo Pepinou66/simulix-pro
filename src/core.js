@@ -608,12 +608,81 @@ const Ctl = {
     $('#bTrouble').classList.toggle('on', App.hideFaults);
   }
 };
+/* ===================== SECONDE VUE (scindée / mini-fenêtre) =====================
+   Affiche un autre folio en même temps : on actionne les boutons du schéma électrique
+   et on voit réagir le pneumatique ou l'hydraulique. Les éléments y sont aussi cliquables. */
+const View2 = {
+  mode: '', sheet: 1, view: { ox: 20, oy: 20, s: 0.5 }, cv: null, drag: null, fitted: false,
+  init() {
+    this.cv = $('#cv2'); const cv2 = this.cv;
+    $('#selView').onchange = e => this.set(e.target.value);
+    $('#p2sel').onchange = e => { this.sheet = +e.target.value; this.fit(); };
+    $('#p2fit').onclick = () => this.fit();
+    $('#p2close').onclick = () => { this.set(''); $('#selView').value = ''; };
+    new ResizeObserver(() => { if (this.mode) this.resize(); }).observe($('#pane2'));
+    const w = (e) => { const r = cv2.getBoundingClientRect(); return { sx: e.clientX - r.left, sy: e.clientY - r.top }; };
+    const world = (sx, sy) => ({ x: (sx - this.view.ox) / this.view.s, y: (sy - this.view.oy) / this.view.s });
+    const onSheet = f => { const k = App.sheet; App.sheet = this.sheet; try { return f(); } finally { App.sheet = k; } };
+    cv2.addEventListener('pointerdown', e => {
+      cv2.setPointerCapture(e.pointerId); const { sx, sy } = w(e), p = world(sx, sy);
+      const c = onSheet(() => hitComp(p));
+      if (c && Sim.S) {
+        const d = DEFS[c.type];
+        if (c.type === 'plc' && this.lastTap && this.lastTap.id === c.id && Date.now() - this.lastTap.t < 350) { PE.open(c); return; }
+        this.lastTap = { id: c.id, t: Date.now() };
+        if (d.press) { const l = toLocal(c, p.x, p.y); if (d.press(c, l.x, l.y, Sim.S)) { this.drag = { mode: 'press', c }; Sim.settleNow(); return; } }
+      }
+      if (c && !Sim.S) { App.sheet = this.sheet; App.sel = new Set([c.id]); Sheets.render(); Props.render(); return; }
+      this.drag = { mode: 'pan', sx, sy, ox: this.view.ox, oy: this.view.oy };
+    });
+    cv2.addEventListener('pointermove', e => {
+      const { sx, sy } = w(e);
+      if (this.drag && this.drag.mode === 'pan') { this.view.ox = this.drag.ox + sx - this.drag.sx; this.view.oy = this.drag.oy + sy - this.drag.sy; return; }
+      if (!this.drag && Sim.S) { const c = onSheet(() => hitComp(world(sx, sy))); cv2.style.cursor = c && DEFS[c.type].press ? 'pointer' : 'grab'; this.hover = c ? c.id : null; }
+    });
+    const up = () => { if (this.drag && this.drag.mode === 'press') { const d = DEFS[this.drag.c.type]; if (d.release && d.release(this.drag.c)) Sim.settleNow(); } this.drag = null; };
+    cv2.addEventListener('pointerup', up); cv2.addEventListener('pointercancel', up);
+    cv2.addEventListener('wheel', e => { e.preventDefault(); const { sx, sy } = w(e), p = world(sx, sy), f = Math.pow(1.0015, -e.deltaY); this.view.s = clamp(this.view.s * f, 0.1, 4); this.view.ox = sx - p.x * this.view.s; this.view.oy = sy - p.y * this.view.s; }, { passive: false });
+    cv2.addEventListener('dblclick', () => this.fit());
+    // déplacement de la mini-fenêtre par sa barre de titre
+    const head = $('#pane2 .p2h'); let mv = null;
+    head.addEventListener('pointerdown', e => { if (this.mode !== 'pip' || e.target.closest('select,button')) return; const pn = $('#pane2'), r = pn.getBoundingClientRect(), pr = $('#views').getBoundingClientRect(); mv = { dx: e.clientX - r.left, dy: e.clientY - r.top, pr }; head.setPointerCapture(e.pointerId); });
+    head.addEventListener('pointermove', e => { if (!mv) return; const pn = $('#pane2'); pn.style.left = clamp(e.clientX - mv.pr.left - mv.dx, 0, mv.pr.width - 120) + 'px'; pn.style.top = clamp(e.clientY - mv.pr.top - mv.dy, 0, mv.pr.height - 60) + 'px'; pn.style.right = 'auto'; pn.style.bottom = 'auto'; });
+    head.addEventListener('pointerup', () => mv = null);
+  },
+  set(mode) {
+    this.mode = mode; const vw = $('#views'); vw.classList.toggle('split', mode === 'split'); vw.classList.toggle('pip', mode === 'pip');
+    if (mode !== 'pip') { const pn = $('#pane2'); pn.style.left = pn.style.top = pn.style.right = pn.style.bottom = ''; }
+    if (mode) { if (this.sheet >= App.sheets.length || this.sheet === App.sheet) this.sheet = App.sheets.length > 1 ? (App.sheet === 0 ? 1 : 0) : 0; this.options(); setTimeout(() => { this.resize(); this.fit(); View.resize(); if (mode === 'split') View.fit(); }, 30); }
+    else setTimeout(() => View.resize(), 30);
+  },
+  options() { const sel = $('#p2sel'); sel.innerHTML = App.sheets.map((s, i) => `<option value="${i}" ${i === this.sheet ? 'selected' : ''}>${i + 1}. ${esc(s.name)}</option>`).join(''); },
+  resize() { const r = this.cv.getBoundingClientRect(); this.cv.width = Math.max(1, r.width * DPR); this.cv.height = Math.max(1, r.height * DPR); },
+  fit() {
+    const r = this.cv.getBoundingClientRect(); if (!r.width) return; const cs = App.comps.filter(c => (c.sheet || 0) === this.sheet);
+    let b = { x0: 1e9, y0: 1e9, x1: -1e9, y1: -1e9 }; cs.forEach(c => { const q = compBBox(c); b.x0 = Math.min(b.x0, q.x - 30); b.y0 = Math.min(b.y0, q.y - 30); b.x1 = Math.max(b.x1, q.x + q.w + 30); b.y1 = Math.max(b.y1, q.y + q.h + 30); });
+    if (!cs.length) b = { x0: 0, y0: 0, x1: FRAME.w, y1: FRAME.h };
+    const s = clamp(Math.min((r.width - 16) / (b.x1 - b.x0), (r.height - 16) / (b.y1 - b.y0)), 0.08, 2);
+    this.view = { s, ox: (r.width - (b.x1 - b.x0) * s) / 2 - b.x0 * s, oy: (r.height - (b.y1 - b.y0) * s) / 2 - b.y0 * s };
+  },
+  render() {
+    if (!this.mode) return; const cv2 = this.cv, r = cv2.getBoundingClientRect(); if (cv2.width !== Math.round(r.width * DPR)) this.resize();
+    if ($('#p2sel').options.length !== App.sheets.length) this.options();
+    const g = cv2.getContext('2d'), v = this.view; g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = '#eef1f5'; g.fillRect(0, 0, cv2.width, cv2.height);
+    g.setTransform(DPR * v.s, 0, 0, DPR * v.s, DPR * v.ox, DPR * v.oy);
+    const k = App.sheet, fr = App.opts.frame; App.sheet = this.sheet; App.opts.frame = false;
+    try {
+      drawScene(g, Sim.S, false);
+      if (Sim.S && this.hover) { const c = App.byId(this.hover); if (c && (c.sheet || 0) === this.sheet && DEFS[c.type].press) { const b = compBBox(c); g.strokeStyle = 'rgba(15,98,254,.5)'; g.lineWidth = 1.5 / v.s; g.strokeRect(b.x - 5, b.y - 5, b.w + 10, b.h + 10); } }
+    } finally { App.sheet = k; App.opts.frame = fr; }
+  }
+};
 let last = performance.now(), acc = 0, probeT = 0;
 function loop(now) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
   if (Sim.S && App.running) { acc += dt * App.speed; let n = 0; while (acc >= DT && n < 40) { Sim.tick(); Plot.sample(); acc -= DT; n++; } if (n >= 40) acc = 0; }
   if (Sim.S) { $('#simtime').textContent = fmt(Sim.S.t, 2) + ' s'; const b = $('#banner'); b.style.display = Sim.S.banner ? 'block' : 'none'; b.textContent = Sim.S.banner; } else { $('#simtime').textContent = '0.00 s'; $('#banner').style.display = 'none'; }
-  render(); Plot.draw();
+  render(); View2.render(); Plot.draw();
   if (now - probeT > 250) { probeT = now; Props.probe(); }
   requestAnimationFrame(loop);
 }
