@@ -548,7 +548,7 @@ def('hpump', {
   srcVal(c) {
     const t = c.props.ptype || 'fixe', s = st(c), nr = this.speed(c);
     let q = (+c.props.disp || 16) * nr / 1000 * ((+c.props.etav || 95) / 100) * (t === 'variable' ? clamp(+c.props.cmd || 0, 0, 100) / 100 : 1);
-    if (c.fault === 'low') q *= 0.55; if (c.fault === 'cav') q *= 0.5; if (s.dry) q = 0;
+    if (c.fault === 'low') q *= 0.55; if (c.fault === 'cav') q *= 0.5; if (s.dry || s.broken) q = 0;
     const reg = c.fault === 'reg' ? null : t === 'regp' ? (+c.props.pc || 160) : null, ls = c.fault === 'reg' ? null : t === 'ls' ? (+c.props.dls || 20) : null;
     let p = Math.max((+c.props.padm || 250) * 1.6, ...App.comps.filter(o => o.type === 'relief').map(o => (+o.props.set || 100) + 5)); if (t === 'ls' && c.fault !== 'reg') p = Math.min(p, +c.props.pc || p); // sans limiteur la pression monte au-delà de l'admissible (casse)
     return { q, p, reg, ls, nr };
@@ -559,8 +559,9 @@ def('hpump', {
     const s = st(c), v = this.srcVal(c); if (s.dry && v.nr > 0 && !s.warnDry) { s.warnDry = 1; S.stickyBanner = S.banner = '⚠ Pompe ' + c.props.tag + ' : aspiration S non reliée au réservoir — la pompe tourne à sec (cavitation, destruction)'; }
     if (!s.dry) s.warnDry = 0;
     const p = S.P(c, 'P'), lim = +c.props.padm || 250;
-    if (v.q > 0.01 && p > lim * 1.01 && !s.warnP) { s.warnP = 1; const rl = App.comps.find(o => o.type === 'relief' && S.root(o, 'P') === S.root(c, 'P') && S.vent(o, 'T')); S.stickyBanner = S.banner = rl ? '💥 Pompe ' + c.props.tag + ' : ' + Math.round(p) + ' bar > pression maxi admissible ' + lim + ' bar — le limiteur ' + rl.props.tag + ' est taré à ' + rl.props.set + ' bar, trop haut pour la pompe : régler le tarage sous ' + lim + ' bar' : '💥 Pompe ' + c.props.tag + ' : ' + Math.round(p) + ' bar > pression maxi admissible ' + lim + ' bar — aucun limiteur de pression ne protège le refoulement (casse pompe / flexibles)' + ((r => r ? ' : le limiteur ' + r.props.tag + ' est monté en série, son orifice T doit aller au réservoir' : '')(App.comps.find(o => o.type === 'relief' && st(o).ser))); }
-    if (p < lim && s.warnP) { s.warnP = 0; if ((S.stickyBanner || '').startsWith('💥 Pompe ' + c.props.tag + ' ')) S.stickyBanner = ''; }
+    if (v.q > 0.01 && p > lim * 1.02) { if (s.over == null) s.over = S.t; if (!s.broken && S.t - s.over > 0.3) { s.broken = true; const rl = App.comps.find(o => o.type === 'relief' && S.root(o, 'P') === S.root(c, 'P') && S.vent(o, 'T')); S.stickyBanner = S.banner = '💥 Pompe ' + c.props.tag + ' CASSÉE : ' + Math.round(p) + ' bar > pression maxi admissible ' + lim + ' bar' + (rl ? ' — le limiteur ' + rl.props.tag + ' était taré à ' + rl.props.set + ' bar, au-dessus de la pompe (le tarage doit rester sous la pression maxi de la pompe)' : ' — aucun limiteur de pression ne la protégeait') + '. Arrêter la simulation pour remplacer la pompe.'; return; } } else s.over = null;
+    if (v.q > 0.01 && p > lim * 1.01 && !s.warnP && !s.broken) { s.warnP = 1; const rl = App.comps.find(o => o.type === 'relief' && S.root(o, 'P') === S.root(c, 'P') && S.vent(o, 'T')); S.stickyBanner = S.banner = rl ? '💥 Pompe ' + c.props.tag + ' : ' + Math.round(p) + ' bar > pression maxi admissible ' + lim + ' bar — le limiteur ' + rl.props.tag + ' est taré à ' + rl.props.set + ' bar, trop haut pour la pompe : régler le tarage sous ' + lim + ' bar' : '💥 Pompe ' + c.props.tag + ' : ' + Math.round(p) + ' bar > pression maxi admissible ' + lim + ' bar — aucun limiteur de pression ne protège le refoulement (casse pompe / flexibles)' + ((r => r ? ' : le limiteur ' + r.props.tag + ' est monté en série, son orifice T doit aller au réservoir' : '')(App.comps.find(o => o.type === 'relief' && st(o).ser))); }
+    if (p < lim && s.warnP && !s.broken) { s.warnP = 0; if ((S.stickyBanner || '').startsWith('💥 Pompe ' + c.props.tag + ' ')) S.stickyBanner = ''; }
   },
   press(c) { if (c.props.ptype === 'variable') { c.props.cmd = ((+c.props.cmd || 0) >= 100 ? 0 : (+c.props.cmd || 0) + 25); Props.render(); return true; } },
   hint: c => c.props.ptype === 'variable' ? 'Cliquer : régler la cylindrée (' + c.props.cmd + ' %)' : 'Pompe ' + PTECH[c.props.tech || 'engr'] + ' — ' + PTYPES[c.props.ptype || 'fixe'],
@@ -576,9 +577,10 @@ def('hpump', {
     if (t === 'variable') D.text(ctx, (c.props.cmd | 0) + '%', 76, 50, 8, '#1d4ed8', 'right', true);
     D.text(ctx, 'P', 48, 6, 8, '#64748b'); D.text(ctx, 'S', 48, 94, 8, '#64748b');
     if (S && s.dry && (Date.now() / 250 | 0) % 2) D.text(ctx, '!', 26, 86, 12, '#dc2626', 'center', true);
+    if (s.broken) { ctx.strokeStyle = '#dc2626'; ctx.lineWidth = 3; D.line(ctx, [24, 34, 56, 66]); D.line(ctx, [56, 34, 24, 66]); ctx.lineWidth = 1.6; ctx.strokeStyle = INK; }
   },
   probe(c, S) {
-    const v = this.srcVal(c), o = { 'Type': 'Pompe ' + PTECH[c.props.tech || 'engr'] + ' — ' + PTYPES[c.props.ptype || 'fixe'], 'Régime': fmt(v.nr, 0) + ' tr/min', 'Débit (Cyl × N / 1000 × ηv)': fmt(v.q, 1) + ' L/min', 'Pression maxi admissible': c.props.padm + ' bar' };
+    const v = this.srcVal(c), o = { 'Type': 'Pompe ' + PTECH[c.props.tech || 'engr'] + ' — ' + PTYPES[c.props.ptype || 'fixe'], 'État': st(c).broken ? 'CASSÉE (surpression)' : 'bon', 'Régime': fmt(v.nr, 0) + ' tr/min', 'Débit (Cyl × N / 1000 × ηv)': fmt(v.q, 1) + ' L/min', 'Pression maxi admissible': c.props.padm + ' bar' };
     if (v.reg != null) o['Consigne régulateur'] = v.reg + ' bar'; if (v.ls != null) o['Stand-by LS'] = v.ls + ' bar (cut-off ' + v.p + ' bar)';
     if (S) { const r = S.root(c, 'P'), p = S.P(c, 'P'); o['Pression refoulement'] = fmt(p, 1) + ' bar'; o['Débit refoulé'] = fmt(S.flow.get(r) || 0, 1) + ' L/min'; o['Puissance hydraulique Q×p/600'] = fmt((S.flow.get(r) || 0) * p / 600, 2) + ' kW'; o['Aspiration'] = st(c).dry ? 'NON RELIÉE AU RÉSERVOIR' : 'alimentée'; }
     return o;
