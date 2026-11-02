@@ -177,7 +177,7 @@ table.grid td input:focus{border-color:var(--accent);outline:none}
     <button class="tb" id="bStep" title="Pas à pas" disabled>⏭</button>
     <button class="tb" id="bStop" title="Arrêter et réinitialiser" disabled>⏹</button>
     <select class="tbs" id="selSpeed" title="Vitesse de simulation"><option value="0.25">×0.25</option><option value="0.5">×0.5</option><option value="1" selected>×1</option><option value="2">×2</option><option value="4">×4</option></select>
-    <span id="simtime">0.00 s</span>
+    <span id="simtime" title="Temps de simulation (HH:mm:ss)">00:00:00</span>
     <div class="sep"></div>
     <select class="tbs" id="selView" title="Seconde vue pour voir un autre folio pendant la simulation"><option value="">🗗 Une vue</option><option value="split">⫴ Vue scindée</option><option value="pip">▣ Mini-fenêtre</option></select>
     <button class="tb" id="bPlot" title="Traceur de courbes">📈<span class="hidem"> Traceur</span></button>
@@ -2288,6 +2288,7 @@ function wireSegAt(w, p) { const wp = wirePts(w); if (!wp) return -1; const tol 
 function distSeg(p, a, b) { const dx = b.x - a.x, dy = b.y - a.y, l = dx * dx + dy * dy; let t = l ? ((p.x - a.x) * dx + (p.y - a.y) * dy) / l : 0; t = clamp(t, 0, 1); return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy); }
 
 /* ===================== RENDU ===================== */
+const hms = t => { t = Math.floor(t || 0); const p = n => String(n).padStart(2, '0'); return p(Math.floor(t / 3600)) + ':' + p(Math.floor(t / 60) % 60) + ':' + p(t % 60); };
 const cv = $('#cv'), ctx = cv.getContext('2d');
 let DPR = 1, hoverPort = null, mouseW = { x: 0, y: 0 }, rubber = null;
 const View = {
@@ -2971,7 +2972,7 @@ let last = performance.now(), acc = 0, probeT = 0;
 function loop(now) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
   if (Sim.S && App.running) { acc += dt * App.speed; let n = 0; while (acc >= DT && n < 40) { Sim.tick(); Plot.sample(); acc -= DT; n++; } if (n >= 40) acc = 0; }
-  if (Sim.S) { $('#simtime').textContent = fmt(Sim.S.t, 2) + ' s'; const b = $('#banner'); b.style.display = Sim.S.banner ? 'block' : 'none'; b.textContent = Sim.S.banner; } else { $('#simtime').textContent = '0.00 s'; $('#banner').style.display = 'none'; }
+  if (Sim.S) { $('#simtime').textContent = hms(Sim.S.t); const b = $('#banner'); b.style.display = Sim.S.banner ? 'block' : 'none'; b.textContent = Sim.S.banner; } else { $('#simtime').textContent = '00:00:00'; $('#banner').style.display = 'none'; }
   render(); View2.render(); Plot.draw();
   if (now - probeT > 250) { probeT = now; Props.probe(); }
   requestAnimationFrame(loop);
