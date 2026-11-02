@@ -2187,7 +2187,7 @@ const App = {
   uid() { return 'c' + (this.nid++); },
   sheetComps() { return this.comps.filter(c => (c.sheet || 0) === this.sheet); },
   byId(id) { return this.comps.find(c => c.id === id); },
-  changed(commit) { if (commit !== false) this.commit(); Props.render(); },
+  changed(commit) { if (commit !== false) this.commit(); if (Sim.S && !this.running) { try { Sim.tick(1e-6); } catch (e) { console.error(e); } } Props.render(); }, // en pause : recalcul immédiat des pressions après un réglage
   serialize() {
     return JSON.stringify({ app: 'Simulix Pro', version: 1, project: this.project, opts: this.opts, sheets: this.sheets, hideFaults: this.hideFaults, lib: this.lib,
       comps: this.comps.map(c => ({ id: c.id, type: c.type, x: c.x, y: c.y, rot: c.rot || 0, sheet: c.sheet || 0, props: c.props, fault: c.fault || null })),
