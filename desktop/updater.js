@@ -40,6 +40,7 @@ function check(isManual) {
   set({ status: 'checking', error: null });
   settings.lastCheck = new Date().toISOString(); save(settings);
   autoUpdater.checkForUpdates().catch(e => set({ status: 'error', error: friendly(e) }));
+  setTimeout(() => { if (state.status === 'checking') set({ status: 'error', error: 'Pas de réponse du serveur de mises à jour (vérifiez la connexion Internet).' }); }, 30000);
 }
 
 function init(mainWindow) {
