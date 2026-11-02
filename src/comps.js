@@ -977,13 +977,15 @@ def('cbv', {
   probe: (c, S) => ({ 'Pression de pilotage X': S ? fmt(S.P(c, 'X'), 1) + ' bar' : '—', 'État': st(c).open ? 'ouverte (descente pilotée)' : 'fermée : charge retenue' })
 });
 def('pumpvar', {
-  name: 'Pompe hydrostatique (circuit fermé)', cat: 'Hydraulique', w: 120, h: 100, ports: [P('A', 30, 0, 'h', 'A'), P('B', 90, 0, 'h', 'B')],
+  name: 'Pompe hydrostatique (circuit fermé)', cat: 'Hydraulique', w: 120, h: 110, ports: [P('A', 30, 0, 'h', 'A'), P('B', 90, 0, 'h', 'B'), P('T', 110, 110, 'h', 'T (réservoir : aspiration gavage + drain carter)')],
   defProps: { tag: '1P1', disp: 45, n: 2000, cmd: 0, gav: 25, hp: 400 },
   fields: [TAGF, { k: 'disp', label: 'Cylindrée maxi (cm³/tr)', type: 'num' }, { k: 'n', label: 'Régime moteur thermique (tr/min)', type: 'num' }, { k: 'cmd', label: 'Commande plateau (−100 à +100 %)', type: 'num', step: 25 }, { k: 'gav', label: 'Pression de gavage (bar)', type: 'num' }, { k: 'hp', label: 'Soupapes HP (bar)', type: 'num' }, REFF],
   faults: [['zero', 'Zéro de pompe déréglé (le moteur dérive au neutre)'], ['gav', 'Pression de gavage trop faible (pompe de gavage usée)'], ['hp', 'Soupape HP déréglée']],
   bom: 'Pompe à pistons axiaux à cylindrée variable double sens de flux + pompe de gavage',
-  val(c) { let cmd = clamp(+c.props.cmd || 0, -100, 100); if (c.fault === 'zero') cmd += 8; let q = (+c.props.disp || 45) * (+c.props.n || 2000) / 1000 * Math.abs(cmd) / 100, gav = +c.props.gav || 25, hp = +c.props.hp || 400; if (c.fault === 'gav') { gav = 5; q *= 0.6; } if (c.fault === 'hp') hp = 150; return { cmd, q, gav, hp }; },
-  sources(c) { const v = this.val(c); if (v.cmd > 0.5) return [['A', 'hyd', v.hp, v.q, 0], ['B', 'lowp', v.gav]]; if (v.cmd < -0.5) return [['B', 'hyd', v.hp, v.q, 0], ['A', 'lowp', v.gav]]; return [['A', 'lowp', v.gav], ['B', 'lowp', v.gav]]; },
+  val(c) { let cmd = clamp(+c.props.cmd || 0, -100, 100); if (c.fault === 'zero') cmd += 8; let q = (+c.props.disp || 45) * (+c.props.n || 2000) / 1000 * Math.abs(cmd) / 100, gav = +c.props.gav || 25, hp = +c.props.hp || 400; if (c.fault === 'gav') { gav = 5; q *= 0.6; } if (c.fault === 'hp') hp = 150; if (st(c).dry) { gav = 0; q = 0; } return { cmd, q, gav, hp }; },
+  // prise réservoir T : si elle est raccordée, elle doit aboutir au réservoir (sinon la pompe de gavage aspire à vide) ; non raccordée = réservoir intégré
+  update(c, S) { const wired = App.wires.some(w => (w.a.c === c.id && w.a.p === 'T') || (w.b.c === c.id && w.b.p === 'T')); const dry = wired && !S.vent(c, 'T'); if (st(c).dry !== dry) { st(c).dry = dry; if (dry) S.stickyBanner = S.banner = '⚠ ' + (c.props.tag || 'Pompe hydrostatique') + ' : prise réservoir T non reliée au réservoir — plus de gavage, la transmission ne débite plus'; return true; } return false; },
+  sources(c) { const v = this.val(c); if (st(c).dry) return []; if (v.cmd > 0.5) return [['A', 'hyd', v.hp, v.q, 0], ['B', 'lowp', v.gav]]; if (v.cmd < -0.5) return [['B', 'hyd', v.hp, v.q, 0], ['A', 'lowp', v.gav]]; return [['A', 'lowp', v.gav], ['B', 'lowp', v.gav]]; },
   press(c, x) { c.props.cmd = clamp((+c.props.cmd || 0) + (x < 60 ? -25 : 25), -100, 100); Props.render(); return true; },
   hint: (c, x) => x < 60 ? 'Cliquer : plateau vers marche arrière (−25 %)' : 'Cliquer : plateau vers marche avant (+25 %)',
   draw(ctx, c, S) {
@@ -993,8 +995,10 @@ def('pumpvar', {
     D.line(ctx, [40, 44, 20, 44]); D.text(ctx, 'M', 12, 44, 9, INK, 'center', true);
     D.rect(ctx, 30, 72, 60, 22, '#f8fafc'); D.text(ctx, (v.cmd > 0 ? '+' : '') + Math.round(v.cmd) + ' %', 60, 83, 10, v.cmd ? '#1d4ed8' : INK, 'center', true);
     D.text(ctx, '◀', 18, 83, 10, '#64748b'); D.text(ctx, '▶', 102, 83, 10, '#64748b');
+    ctx.strokeStyle = INK; D.dash(ctx, 1); D.line(ctx, [70, 58, 110, 58, 110, 110]); D.dash(ctx, 0); D.text(ctx, 'T', 116, 102, 8, '#64748b');
+    if (S && st(c).dry && (Date.now() / 250 | 0) % 2) D.text(ctx, '!', 100, 102, 12, '#dc2626', 'center', true);
   },
-  probe(c, S) { const v = this.val(c); return { 'Débit': fmt(v.q, 1) + ' L/min', 'Sens': v.cmd > 0.5 ? 'A refoulement' : v.cmd < -0.5 ? 'B refoulement' : 'neutre (stand-by)', 'Pression A (MA)': S ? fmt(S.P(c, 'A'), 1) + ' bar' : '—', 'Pression B (MB)': S ? fmt(S.P(c, 'B'), 1) + ' bar' : '—', 'Gavage': v.gav + ' bar' }; },
+  probe(c, S) { const v = this.val(c); return { 'Débit': fmt(v.q, 1) + ' L/min', 'Sens': v.cmd > 0.5 ? 'A refoulement' : v.cmd < -0.5 ? 'B refoulement' : 'neutre (stand-by)', 'Pression A (MA)': S ? fmt(S.P(c, 'A'), 1) + ' bar' : '—', 'Pression B (MB)': S ? fmt(S.P(c, 'B'), 1) + ' bar' : '—', 'Gavage': v.gav + ' bar', 'Prise réservoir T': st(c).dry ? 'NON RELIÉE AU RÉSERVOIR' : 'alimentée' }; },
   plot: (c, S) => S ? Math.max(S.P(c, 'A'), S.P(c, 'B')) : 0, plotUnit: 'bar'
 });
 def('shuttle', {

@@ -185,6 +185,7 @@ function exHydrostat() {
   const M = o.add('motorf', 320, 120, { tag: 'M1', medium: 'hyd', disp: 100, torque: 120, labPos: 'tr' });
   const GA = o.add('gauge', 180, 260, { tag: 'MA' }), GB = o.add('gauge', 480, 260, { tag: 'MB' });
   o.w(P, 'A', M, 'A', 300); o.w(P, 'B', M, 'B', 100); o.w(GA, 'f', P, 'A'); o.w(GB, 'f', P, 'B');
+  const TK = o.add('tank', 380, 580); o.w(P, 'T', TK, 'T');
   o.txt(640, 300, 'Cliquez à droite / à gauche de la pompe pour incliner le plateau (marche avant / arrière).\nStand-by : MA = MB = pression de gavage (25 bar).\nEn marche : la branche HP prend la pression de la charge, l\'autre reste au gavage.\nDéfaillances à tester : moteur bloqué (soupape HP 400 bar),\nzéro de pompe déréglé (dérive au neutre), gavage trop faible.', 0, 13);
   return o;
 }
