@@ -67,6 +67,7 @@ jobs:
         working-directory: mobile/android
         run: |
           chmod +x gradlew
+          mkdir -p ~/.android && cp ../debug.keystore ~/.android/debug.keystore  # même signature à chaque version : les mises à jour s'installent par-dessus
           ./gradlew assembleDebug --no-daemon
       - name: Publication dans la release
         env:
