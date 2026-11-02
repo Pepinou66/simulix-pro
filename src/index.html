@@ -32,7 +32,9 @@ input,select,textarea{font:inherit}
 #simtime{font-variant-numeric:tabular-nums;color:#9fb3cf;min-width:62px;text-align:right;flex:none}
 select.tbs{background:#263044;color:#fff;border:1px solid #3a4558;border-radius:6px;padding:4px;flex:none}
 /* ---- main ---- */
-#main{display:grid;grid-template-columns:232px 1fr 270px;min-height:0;position:relative}
+#main{display:grid;grid-template-columns:var(--palW,232px) 6px 1fr 6px var(--propW,270px);min-height:0;position:relative}
+.split-h{cursor:col-resize;background:#d6dbe3;position:relative;z-index:4}
+.split-h:hover,.split-h.on{background:#0f62fe}
 #palette,#props{background:var(--panel);border-right:1px solid var(--line);overflow:auto;min-height:0}
 #props{border-right:0;border-left:1px solid var(--line)}
 #center{position:relative;min-width:0;min-height:0;display:flex;flex-direction:column}
@@ -122,6 +124,13 @@ table.grid td input:focus{border-color:var(--accent);outline:none}
 #views.split .pane2{display:flex;flex:1;border-left:3px solid #1e293b}
 #views.pip .pane2{display:flex;position:absolute;right:56px;bottom:12px;width:420px;height:280px;border:2px solid #1e293b;border-radius:8px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.3);z-index:7;resize:both;min-width:220px;min-height:150px}
 #views.pip .p2h{cursor:move}
+#ctx{position:fixed;display:none;z-index:70;background:#fff;border:1px solid #d6dbe3;border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,.2);padding:4px;min-width:210px;font-size:13px;max-height:80vh;overflow:auto}
+#ctx .it{padding:6px 10px;border-radius:5px;cursor:pointer;display:flex;gap:8px;align-items:center;white-space:nowrap}
+#ctx .it:hover{background:#eef4ff}
+#ctx .it.dis{opacity:.4;pointer-events:none}
+#ctx .sep2{height:1px;background:#e5e7eb;margin:4px 2px}
+#ctx .hd{padding:4px 10px;font-size:11px;color:#6b7686;font-weight:600}
+#ctx input{width:100%;padding:5px 7px;border:1px solid #d6dbe3;border-radius:5px;margin:2px 0 4px}
 #tip{position:absolute;display:none;pointer-events:none;background:#111827;color:#f9fafb;font-size:12px;line-height:1.4;padding:6px 9px;border-radius:7px;max-width:300px;box-shadow:0 6px 20px rgba(0,0,0,.25);z-index:6}
 #modeTag{position:absolute;left:8px;top:8px;background:rgba(255,255,255,.9);border:1px solid var(--line);border-radius:6px;padding:3px 8px;font-size:11px;color:var(--muted);pointer-events:none}
 #zoomctl{position:absolute;right:8px;bottom:36px;display:flex;flex-direction:column;gap:4px;z-index:3}
@@ -133,6 +142,7 @@ table.grid td input:focus{border-color:var(--accent);outline:none}
   #palette{left:0}#props{right:0}
   #palette.show,#props.show{display:block}
   .mobbtn{display:inline-flex}
+  .split-h{display:none}
   .hidem{display:none}
 }
 #printArea{display:none}
@@ -148,7 +158,7 @@ table.grid td input:focus{border-color:var(--accent);outline:none}
 <body>
 <div id="app">
   <div id="top">
-    <div id="brand"><b>Simulix</b><small>PRO</small></div>
+    <div id="brand"><b>Simulix</b><small>PRO</small><a id="ghLink" href="https://github.com/Pepinou66/simulix-pro" target="_blank" rel="noopener" title="Code source sur GitHub (logiciel libre GPL-3.0)" style="color:#93a4bd;text-decoration:none;font-size:11px;border:1px solid #3a4558;border-radius:4px;padding:1px 6px;font-weight:500">⌥ GitHub</a></div>
     <button class="tb mobbtn" id="bPal" title="Bibliothèque">☰ Biblio</button>
     <button class="tb" id="bNew" title="Nouveau projet">🗋<span class="hidem"> Nouveau</span></button>
     <button class="tb" id="bOpen" title="Ouvrir un projet (.sxp/.json)">📂<span class="hidem"> Ouvrir</span></button>
@@ -178,6 +188,7 @@ table.grid td input:focus{border-color:var(--accent);outline:none}
   </div>
   <div id="main">
     <div id="palette"></div>
+    <div class="split-h" id="splitL" title="Glisser pour redimensionner la bibliothèque"></div>
     <div id="center">
       <div id="views"><canvas id="cv"></canvas><div id="pane2" class="pane2"><div class="p2h"><span class="p2t">Folio</span><select id="p2sel"></select><button id="p2fit" title="Ajuster">⤢</button><button id="p2close" title="Fermer">✕</button></div><canvas id="cv2"></canvas></div></div>
       <div id="modeTag">Édition</div>
@@ -186,12 +197,15 @@ table.grid td input:focus{border-color:var(--accent);outline:none}
       <div id="zoomctl"><button id="zIn">+</button><button id="zOut">−</button><button id="zFit" title="Ajuster">⤢</button></div>
       <div id="sheets"></div>
     </div>
+    <div class="split-h" id="splitR" title="Glisser pour redimensionner le panneau"></div>
     <div id="props"></div>
   </div>
   <div id="plot"><canvas id="plotc"></canvas><div id="plotbar"><button id="plotClr">Effacer canaux</button><button id="plotClose">✕</button></div></div>
 </div>
 <div class="modal" id="modal"><div class="dlg" id="dlg"></div></div>
 <div id="toast"></div>
+<div id="ctx"></div>
+<input type="file" id="logoIn" accept="image/*" style="display:none">
 <div id="printArea"></div>
 <input type="file" id="fileIn" accept=".sxp,.json,application/json" style="display:none">
 <!--SCRIPTS-->

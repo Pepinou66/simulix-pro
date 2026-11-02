@@ -44,6 +44,24 @@ const Files = {
   },
   exportPNG() { const url = this.sheetImage(App.sheet, 2); if (NATIVE) NATIVE.saveDataURL(this.fname().replace(/\.sxp$/, '_F' + (App.sheet + 1) + '.png'), url); else { const a = document.createElement('a'); a.href = url; a.download = this.fname().replace(/\.sxp$/, '_F' + (App.sheet + 1) + '.png'); a.click(); } }
 };
+// logo du cartouche : réduit à 400 px maximum pour garder des fichiers projet légers
+$('#logoIn').onchange = e => {
+  const f = e.target.files[0]; if (!f) return; const r = new FileReader();
+  r.onload = () => { const im = new Image(); im.onload = () => { const k = Math.min(1, 400 / Math.max(im.width, im.height)), c = document.createElement('canvas'); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); App.project.logo = c.toDataURL('image/png'); App.changed(); toast('Logo ajouté au cartouche'); }; im.src = r.result; };
+  r.readAsDataURL(f); e.target.value = '';
+};
+// panneaux redimensionnables (bibliothèque et propriétés)
+(function () {
+  const m = $('#main'), load = k => { try { return +localStorage.getItem(k); } catch (e) { return 0; } }, save = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { } };
+  const pw = load('simulix.palW'), qw = load('simulix.propW'); if (pw) m.style.setProperty('--palW', pw + 'px'); if (qw) m.style.setProperty('--propW', qw + 'px');
+  [['#splitL', '--palW', 'simulix.palW', 1], ['#splitR', '--propW', 'simulix.propW', -1]].forEach(([sel, v, key, dir]) => {
+    const sp = $(sel); let st0 = null;
+    sp.addEventListener('pointerdown', e => { sp.setPointerCapture(e.pointerId); sp.classList.add('on'); const cur = parseFloat(getComputedStyle(m).getPropertyValue(v)) || (dir > 0 ? 232 : 270); st0 = { x: e.clientX, w: cur }; });
+    sp.addEventListener('pointermove', e => { if (!st0) return; const w = clamp(st0.w + (e.clientX - st0.x) * dir, 150, 560); m.style.setProperty(v, w + 'px'); });
+    sp.addEventListener('pointerup', () => { if (!st0) return; sp.classList.remove('on'); save(key, parseFloat(m.style.getPropertyValue(v))); st0 = null; });
+    sp.addEventListener('dblclick', () => { m.style.removeProperty(v); save(key, 0); });
+  });
+})();
 $('#fileIn').onchange = e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => { $('#modal').classList.remove('open'); Files.loadText(r.result); }; r.readAsText(f); e.target.value = ''; };
 
 /* ===================== OUTILS D'INGÉNIERIE ===================== */
@@ -376,6 +394,8 @@ function help() {
   <li>📈 Traceur : ajoutez des vérins, manomètres, débitmètres, bobines… pour suivre leurs courbes dans le temps.</li></ul>
   <h4>Automate</h4><ul><li>Double-cliquez sur l'automate : éditeur Ladder, GRAFCET, mnémoniques, table des variables avec forçage, liaison matérielle Arduino / Modbus TCP.</li></ul>
   <h4>Dépannage</h4><ul><li>Le formateur introduit des défaillances (fil coupé, contact collé, bobine coupée, tiroir bloqué, vérin grippé…), puis active 🛠 Dépannage et enregistre le projet. L'apprenant mesure (voltmètre, manomètre, traceur) et signale les composants défectueux.</li></ul>
+  <h4>Code source</h4><p>Simulix Pro est un logiciel libre (licence GPL-3.0) : <a href="https://github.com/Pepinou66/simulix-pro" target="_blank" rel="noopener">github.com/Pepinou66/simulix-pro</a></p>
+  <h4>Ergonomie</h4><p>Clic droit sur un composant, une liaison ou le fond du schéma : modifier, renommer, régler, défaillance, position du repère, ajouter un composant, coller, supprimer. Faites glisser les bords de la bibliothèque et du panneau de propriétés pour les redimensionner (double-clic : taille par défaut).</p>
   <h4>Mises à jour</h4><p>Menu Aide → Rechercher des mises à jour : choix du mode (me demander, automatique à l'ouverture, à la fermeture, au démarrage de Windows). <button class="btn" onclick="Updates.open()">Ouvrir les réglages de mise à jour</button></p>
   <h4>Raccourcis</h4><p>Suppr : supprimer · R : pivoter · Ctrl+Z / Ctrl+Y : annuler / rétablir · Ctrl+C / Ctrl+V / Ctrl+D : copier / coller / dupliquer · Ctrl+A : tout sélectionner · Ctrl+S : enregistrer · F5 : simuler / arrêter · Molette : zoom · Clic droit ou clic molette glissé : déplacer la vue.</p>
   </div>`;

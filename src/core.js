@@ -66,8 +66,9 @@ const App = {
   },
   rotSel() { if (Sim.S) return; this.sel.forEach(id => { const c = this.byId(id); c.rot = ((c.rot || 0) + 1) % 4; }); if (this.sel.size) this.changed(); },
   copy() { if (!this.sel.size) return; const ids = this.sel; this.clip = { comps: this.comps.filter(c => ids.has(c.id)).map(c => JSON.parse(JSON.stringify({ ...c, state: {} }))), wires: this.wires.filter(w => ids.has(w.a.c) && ids.has(w.b.c)).map(w => ({ ...w })) }; toast(ids.size + ' élément(s) copié(s)'); },
-  paste() {
+  paste(at) {
     if (!this.clip || Sim.S) return; const map = {}; this.sel.clear();
+    if (at && this.clip.comps.length) { const mx = Math.min(...this.clip.comps.map(c => c.x)), my = Math.min(...this.clip.comps.map(c => c.y)); this.clip.comps.forEach(c => { c.x += snap(at.x - mx) - 40; c.y += snap(at.y - my) - 40; }); }
     this.clip.comps.forEach(c0 => { const c = JSON.parse(JSON.stringify(c0)); map[c.id] = c.id = this.uid(); c.x += 40; c.y += 40; c.sheet = this.sheet; c.state = {}; if (c.props.tag && !NOAUTOTAG.includes(c.type)) c.props.tag = this.autoTag(c.type, c.props.tag); this.comps.push(c); this.sel.add(c.id); });
     this.clip.wires.forEach(w => this.wires.push({ ...w, id: this.uid(), a: { c: map[w.a.c], p: w.a.p }, b: { c: map[w.b.c], p: w.b.p } }));
     this.clip.comps.forEach(c => { c.x += 40; c.y += 40; }); this.changed();
@@ -158,8 +159,15 @@ function drawFrame(g) {
   g.fillText('Date : ' + (P.date || ''), cx + 390, cy + 57); g.fillText('Révision : ' + (P.rev || ''), cx + 500, cy + 57);
   g.font = '600 16px system-ui'; g.fillStyle = '#0f172a'; g.fillText('Folio ' + (App.sheet + 1) + ' / ' + App.sheets.length, cx + 390, cy + 92);
   g.font = '600 10px system-ui'; g.fillStyle = '#2563eb'; g.textAlign = 'right'; g.fillText('Simulix Pro', cx + cw - 8, cy + 14);
+  // logo de l'entreprise / de l'établissement (case à gauche du cartouche)
+  if (P.logo) {
+    const lx = cx - 150, ly = cy; g.fillStyle = '#fff'; g.fillRect(lx, ly, 150, ch); g.strokeStyle = '#334155'; g.lineWidth = 1.5; g.strokeRect(lx, ly, 150, ch);
+    const im = logoImg(P.logo); if (im && im.complete && im.naturalWidth) { const k = Math.min(136 / im.naturalWidth, (ch - 14) / im.naturalHeight); const iw = im.naturalWidth * k, ih = im.naturalHeight * k; g.drawImage(im, lx + (150 - iw) / 2, ly + (ch - ih) / 2, iw, ih); }
+  }
   g.restore();
 }
+let _logo = { src: null, img: null };
+function logoImg(src) { if (_logo.src !== src) { _logo = { src, img: new Image() }; _logo.img.src = src; } return _logo.img; }
 function zoneOf(c) { const W = FRAME.w - 40, H = FRAME.h - 40, b = compBBox(c); const x = b.x + b.w / 2 - 20, y = b.y + b.h / 2 - 20; return (clamp(Math.floor(x / (W / 8)), 0, 7) + 1) + 'ABCDEF'[clamp(Math.floor(y / (H / 6)), 0, 5)]; }
 function xrefs(c) {
   const tag = c.props.tag; if (!tag) return '';
@@ -375,7 +383,64 @@ function endPtr(e) {
 }
 cv.addEventListener('pointerup', endPtr); cv.addEventListener('pointercancel', endPtr);
 cv.addEventListener('dblclick', e => { const c = hitComp(View.toWorld(e.offsetX, e.offsetY)); if (c && c.type === 'plc') PE.open(c); });
-cv.addEventListener('contextmenu', e => e.preventDefault());
+cv.addEventListener('contextmenu', e => {
+  e.preventDefault();
+  if (drag && drag.mode === 'pan' && Math.hypot(e.offsetX - drag.sx, e.offsetY - drag.sy) > 5) return; // c'était un déplacement de vue
+  drag = null; Ctx.open(e.clientX, e.clientY, View.toWorld(e.offsetX, e.offsetY));
+});
+/* ===================== MENU CLIC DROIT ===================== */
+const Ctx = {
+  open(x, y, p) {
+    const el = $('#ctx'), S = Sim.S, items = [];
+    const it = (label, fn, dis) => items.push({ label, fn, dis }), sep = () => items.push('-'), hd = t => items.push({ hd: t });
+    const c = hitComp(p), w = !c && hitWire(p);
+    if (c) {
+      if (!App.sel.has(c.id)) { App.sel = new Set([c.id]); App.selWire = null; }
+      const d = DEFS[c.type], multi = App.sel.size > 1;
+      hd(multi ? App.sel.size + ' éléments sélectionnés' : (c.props.tag ? c.props.tag + ' — ' : '') + (typeof d.bom === 'function' ? d.bom(c) : d.name).slice(0, 48));
+      if (!multi) {
+        it('✎ Modifier les propriétés', () => { Props.render(); if (innerWidth < 900) $('#props').classList.add('show'); setTimeout(() => { const f = $('#props input, #props select'); f && f.focus(); }, 50); });
+        if (c.props.tag !== undefined && !d.noLabel) it('🏷 Renommer le repère…', async () => { const v = await ask('Repère', c.props.tag); if (v != null && v.trim()) { c.props.tag = v.trim(); App.changed(); } });
+        if (c.type === 'plc') it('⌨ Programmer l\'automate', () => PE.open(c));
+        if (c.type === 'pump') it('🔧 Modifier le tarage du limiteur…', async () => { const v = await ask('Tarage du limiteur de pression (bar)', String(c.props.pmax)); if (v != null && +v > 0) { c.props.pmax = +v; App.changed(); } });
+        if (c.type === 'relief' || c.type === 'seqv' || c.type === 'reducer' || c.type === 'cbv') it('🔧 Modifier le réglage…', async () => { const v = await ask('Réglage (bar)', String(c.props.set)); if (v != null && +v > 0) { c.props.set = +v; App.changed(); } });
+        if (c.type === 'text') it('✎ Modifier le texte…', async () => { const v = await ask('Texte', c.props.text, true); if (v != null) { c.props.text = v; App.changed(); } });
+        if (d.plot) it('📈 Ajouter au traceur', () => Plot.add(c));
+        const fl = faultList(c);
+        if (fl.length && !App.hideFaults) { sep(); hd('Défaillance simulée'); it((c.fault ? '' : '✔ ') + 'Aucune', () => { c.fault = null; App.changed(); }); fl.forEach(([k, l]) => it((c.fault === k ? '✔ ' : '') + l, () => { c.fault = k; App.changed(); })); }
+        if ((!d.noLabel && c.props.tag) || xrefs(c)) { sep(); hd('Position du repère'); LABPOS.forEach(([k, l]) => it((labPos(c) === k ? '✔ ' : '') + l, () => { c.props.labPos = k; if (k === 'free' && c.props.labDx == null) { c.props.labDx = 0; c.props.labDy = -compBBox(c).h / 2 - 16; } App.changed(); })); }
+      }
+      sep();
+      it('⟳ Pivoter', () => App.rotSel(), !!S); it('⧉ Dupliquer', () => App.dup(), !!S); it('📋 Copier', () => App.copy());
+      it('🗑 Supprimer' + (multi ? ' la sélection' : ''), () => App.delSel(), !!S);
+    } else if (w) {
+      App.selWire = w.id; App.sel.clear(); const fl = w.kind !== 'e' && w.kind !== 'l' && w.kind !== 'x';
+      hd('Liaison ' + kname(w.kind));
+      if (!App.hideFaults) it(w.cut ? (fl ? '✔ Remplacer le flexible' : '✔ Réparer le fil') : (fl ? '💥 Simuler une rupture de flexible' : '✂ Simuler un fil coupé'), () => { w.cut = !w.cut; App.changed(); });
+      it('↺ Tracé automatique', () => { w.mo = null; App.changed(); }, !!S);
+      it('🗑 Supprimer la liaison', () => App.delSel(), !!S);
+    } else {
+      hd('Folio ' + (App.sheet + 1) + ' — ' + App.sheets[App.sheet].name);
+      if (!S) {
+        items.push({ search: true, p });
+        it('📋 Coller ici', () => App.paste(p), !App.clip);
+        it('☐ Tout sélectionner', () => { App.sel = new Set(App.sheetComps().map(c => c.id)); Props.render(); });
+        sep(); it('＋ Nouveau folio', () => { App.sheets.push({ name: 'Folio ' + (App.sheets.length + 1) }); App.sheet = App.sheets.length - 1; App.changed(); Sheets.render(); View.fit(); });
+        it('✎ Renommer le folio…', () => Sheets.rename(App.sheet));
+      }
+      it('⤢ Ajuster la vue', () => View.fit());
+    }
+    Props.render();
+    el.innerHTML = items.map((x, i) => x === '-' ? '<div class="sep2"></div>' : x.hd ? `<div class="hd">${esc(x.hd)}</div>` : x.search ? `<div class="hd">➕ Ajouter un composant</div><input id="ctxQ" placeholder="Rechercher (vérin, distributeur, bobine…)"><div id="ctxR"></div>` : `<div class="it ${x.dis ? 'dis' : ''}" data-i="${i}">${esc(x.label)}</div>`).join('');
+    el.style.display = 'block';
+    const r = el.getBoundingClientRect(); el.style.left = Math.min(x, innerWidth - r.width - 6) + 'px'; el.style.top = Math.min(y, innerHeight - r.height - 6) + 'px';
+    el.onclick = e => { const d = e.target.closest('[data-i]'); if (d) { this.close(); items[+d.dataset.i].fn(); } const a = e.target.closest('[data-add]'); if (a) { const en = Pal.entries().find(q => q.key === a.dataset.add); this.close(); if (en) { const nc = App.addComp(en, p.x, p.y); App.sel = new Set([nc.id]); App.changed(); } } };
+    const q = $('#ctxQ'); if (q) { const upd = () => { const f = q.value.toLowerCase(); const list = Pal.entries().filter(en => (!App.lib || App.lib.includes(en.key)) && (!f || en.label.toLowerCase().includes(f) || en.cat.toLowerCase().includes(f))).slice(0, f ? 14 : 8); $('#ctxR').innerHTML = list.map(en => `<div class="it" data-add="${esc(en.key)}">${esc(en.label)} <span style="color:#94a3b8;font-size:11px">${esc(en.cat)}</span></div>`).join(''); }; q.oninput = upd; upd(); setTimeout(() => q.focus(), 20); q.onkeydown = e => { if (e.key === 'Enter') { const a = $('#ctxR [data-add]'); a && a.click(); } if (e.key === 'Escape') this.close(); }; }
+  },
+  close() { $('#ctx').style.display = 'none'; }
+};
+document.addEventListener('pointerdown', e => { if (!e.target.closest('#ctx')) Ctx.close(); }, true);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') Ctx.close(); });
 cv.addEventListener('wheel', e => { e.preventDefault(); if (e.ctrlKey || !e.shiftKey && Math.abs(e.deltaY) > 0 && !e.deltaX) View.zoomAt(e.offsetX, e.offsetY, Math.pow(1.0015, -e.deltaY)); else { App.view.ox -= e.deltaX; App.view.oy -= e.deltaY; } }, { passive: false });
 document.addEventListener('keydown', e => {
   if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) || $('#modal').classList.contains('open')) return;
@@ -537,6 +602,7 @@ const Props = {
     const P = App.project, n = App.comps.length;
     el.innerHTML = `<h3>Projet</h3><div class="pp">
       ${['name:Nom du projet', 'author:Auteur', 'company:Société', 'rev:Révision', 'date:Date'].map(s => { const [k, l] = s.split(':'); return `<div class="row"><label>${l}</label><input data-pk="${k}" value="${esc(P[k] || '')}"></div>`; }).join('')}
+      <div class="row"><label>Logo du cartouche</label>${P.logo ? `<img src="${P.logo}" style="max-width:100%;max-height:70px;object-fit:contain;border:1px solid #e3e7ee;border-radius:6px;padding:4px;background:#fff">` : '<span class="hint">Aucun logo</span>'}<div class="btns"><button class="btn" id="logoSet">${P.logo ? 'Changer le logo…' : 'Ajouter un logo…'}</button>${P.logo ? '<button class="btn dng" id="logoDel">Retirer</button>' : ''}</div></div>
       <div class="row"><label>Folio actif</label><input id="shName" value="${esc(App.sheets[App.sheet].name)}"></div>
       <div class="btns"><button class="btn dng" id="shDel">Supprimer ce folio</button></div>
       <div class="row chk"><input type="checkbox" id="oFrame" ${App.opts.frame ? 'checked' : ''}><label>Cadre et cartouche</label></div>
@@ -547,6 +613,7 @@ const Props = {
     el.querySelectorAll('[data-pk]').forEach(i => i.onchange = () => { P[i.dataset.pk] = i.value; App.changed(); });
     $('#shName').onchange = e => { App.sheets[App.sheet].name = e.target.value; Sheets.render(); App.changed(); };
     $('#shDel').onclick = () => Sheets.remove(App.sheet);
+    $('#logoSet').onclick = () => $('#logoIn').click(); const ld = $('#logoDel'); if (ld) ld.onclick = () => { delete P.logo; App.changed(); };
     $('#oFrame').onchange = e => { App.opts.frame = e.target.checked; App.changed(); View.fit(); };
     $('#oNums').onchange = e => { App.opts.wireNums = e.target.checked; App.changed(); };
     $('#oXref').onchange = e => { App.opts.xref = e.target.checked; App.changed(); };

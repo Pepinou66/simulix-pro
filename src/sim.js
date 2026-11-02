@@ -93,13 +93,13 @@ const Sim = {
     const g = r => { let o = m.get(r); if (!o) m.set(r, o = { plus: false, zero: false, pr: 0, q: 0, vent: false, med: null, src: false, sup: [], plage: 0, lowp: 0 }); return o; };
     for (const c of App.comps) {
       const d = DEFS[c.type]; if (!d.sources) continue;
-      for (const [p, t, v, q, pl] of d.sources(c, S)) {
+      for (const [p, t, v, q, pl, ex] of d.sources(c, S)) {
         const o = g(uf.find(K(c, p)));
         if (t === 'pot') { (o.pots = o.pots || []).push(v); o.sup.push(c); if (v.dc > 0 || Math.hypot(v.re, v.im) > 0) o.plus = true; else o.zero = true; }
         else if (t === '+') { (o.pots = o.pots || []).push({ sys: c.id, re: 0, im: 0, dc: 24, ph: '+' }); o.plus = true; o.sup.push(c); }
         else if (t === '0') { (o.pots = o.pots || []).push({ sys: c.id, re: 0, im: 0, dc: 0, ph: '0' }); o.zero = true; o.sup.push(c); }
         else if (t === 'pneu') { o.pr = Math.max(o.pr, v); o.src = true; o.med = 'p'; }
-        else if (t === 'hyd') { o.pr = Math.max(o.pr, v); o.q += q; o.src = true; o.med = 'h'; o.plage = Math.max(o.plage, pl || 0); }
+        else if (t === 'hyd') { o.pr = Math.max(o.pr, v); o.q += q; o.src = true; o.med = 'h'; o.plage = Math.max(o.plage, pl || 0); if (ex && ex.reg != null) o.reg = Math.min(o.reg ?? 1e9, ex.reg); if (ex && ex.ls != null) o.ls = ex.ls; }
         else if (t === 'lowp') { o.vent = true; o.med = 'h'; o.lowp = Math.max(o.lowp, v); }
         else if (t === 'vent') { o.vent = true; o.med = o.med || 'p'; }
         else if (t === 'tank') { o.vent = true; o.med = 'h'; }
@@ -160,7 +160,7 @@ const Sim = {
     const addFlow = (r, q) => flow.set(r, (flow.get(r) || 0) + q);
     for (const [root, list] of groups) {
       const info = S.net.get(root); if (!info) continue;
-      const hyd = info.med === 'h', pS = info.pr, pFull = pS * (1 + (info.plage || 0));
+      const hyd = info.med === 'h', pS = info.reg != null ? Math.min(info.pr, info.reg) : info.pr, pFull = pS * (1 + (info.plage || 0));
       const moving = list.filter(([, r]) => r.preq <= pS + 1e-6);
       if (hyd) {
         // le débit va au récepteur le moins chargé d'abord (fiche F05F : le vérin le moins chargé sort en premier)
@@ -175,6 +175,8 @@ const Sim = {
           addFlow(root, qIn); if (r.out) addFlow(S.root(c, r.out), r.motor ? q : q * (r.dir > 0 ? cylGeom(c).Aa / cylGeom(c).Ab : cylGeom(c).Ab / cylGeom(c).Aa));
         }
         const byp = Math.max(0, info.q - used);
+        if (info.ls != null) { dispP.set(root, n ? Math.min(pS, pmin + info.ls) : pS); continue; } // à l'arrêt en butée : coupure de pression, débit nul // load-sensing : p = charge + Δp, débit ajusté
+        if (info.reg != null && (byp > 0.01 || throttled)) { dispP.set(root, n ? Math.min(info.reg, pS) : info.reg); continue; } // régulateur : la pompe se dé-cylindre
         // limiteur : ouvert dès que la pression atteint le tarage ; pression à plein débit = tarage + plage
         let p = n ? Math.min(pS, pmin + 2) : pFull;
         if (n && (throttled || byp > 0.01)) p = pS + (pFull - pS) * (byp / info.q);
@@ -189,7 +191,10 @@ const Sim = {
       }
     }
     // laminage au limiteur quand aucun récepteur n'est alimenté (centre fermé, vérin en butée)
-    for (const [r, i] of S.net) if (i.src && !i.vent && i.med === 'h' && !groups.has(r)) { dispP.set(r, i.pr * (1 + (i.plage || 0))); lam.set(r, i.q * i.pr * (1 + (i.plage || 0)) / 600); }
+    for (const [r, i] of S.net) if (i.src && !i.vent && i.med === 'h' && !groups.has(r)) {
+      if (i.ls != null) dispP.set(r, i.ls); else if (i.reg != null) dispP.set(r, Math.min(i.reg, i.pr));
+      else { dispP.set(r, i.pr * (1 + (i.plage || 0))); lam.set(r, i.q * i.pr * (1 + (i.plage || 0)) / 600); }
+    }
     // pression créée par la charge dans une chambre isolée (fiche F05K : p = F / S)
     S.hold = new Map();
     for (const c of acts) {

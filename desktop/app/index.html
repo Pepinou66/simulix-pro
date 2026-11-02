@@ -32,7 +32,9 @@ input,select,textarea{font:inherit}
 #simtime{font-variant-numeric:tabular-nums;color:#9fb3cf;min-width:62px;text-align:right;flex:none}
 select.tbs{background:#263044;color:#fff;border:1px solid #3a4558;border-radius:6px;padding:4px;flex:none}
 /* ---- main ---- */
-#main{display:grid;grid-template-columns:232px 1fr 270px;min-height:0;position:relative}
+#main{display:grid;grid-template-columns:var(--palW,232px) 6px 1fr 6px var(--propW,270px);min-height:0;position:relative}
+.split-h{cursor:col-resize;background:#d6dbe3;position:relative;z-index:4}
+.split-h:hover,.split-h.on{background:#0f62fe}
 #palette,#props{background:var(--panel);border-right:1px solid var(--line);overflow:auto;min-height:0}
 #props{border-right:0;border-left:1px solid var(--line)}
 #center{position:relative;min-width:0;min-height:0;display:flex;flex-direction:column}
@@ -122,6 +124,13 @@ table.grid td input:focus{border-color:var(--accent);outline:none}
 #views.split .pane2{display:flex;flex:1;border-left:3px solid #1e293b}
 #views.pip .pane2{display:flex;position:absolute;right:56px;bottom:12px;width:420px;height:280px;border:2px solid #1e293b;border-radius:8px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.3);z-index:7;resize:both;min-width:220px;min-height:150px}
 #views.pip .p2h{cursor:move}
+#ctx{position:fixed;display:none;z-index:70;background:#fff;border:1px solid #d6dbe3;border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,.2);padding:4px;min-width:210px;font-size:13px;max-height:80vh;overflow:auto}
+#ctx .it{padding:6px 10px;border-radius:5px;cursor:pointer;display:flex;gap:8px;align-items:center;white-space:nowrap}
+#ctx .it:hover{background:#eef4ff}
+#ctx .it.dis{opacity:.4;pointer-events:none}
+#ctx .sep2{height:1px;background:#e5e7eb;margin:4px 2px}
+#ctx .hd{padding:4px 10px;font-size:11px;color:#6b7686;font-weight:600}
+#ctx input{width:100%;padding:5px 7px;border:1px solid #d6dbe3;border-radius:5px;margin:2px 0 4px}
 #tip{position:absolute;display:none;pointer-events:none;background:#111827;color:#f9fafb;font-size:12px;line-height:1.4;padding:6px 9px;border-radius:7px;max-width:300px;box-shadow:0 6px 20px rgba(0,0,0,.25);z-index:6}
 #modeTag{position:absolute;left:8px;top:8px;background:rgba(255,255,255,.9);border:1px solid var(--line);border-radius:6px;padding:3px 8px;font-size:11px;color:var(--muted);pointer-events:none}
 #zoomctl{position:absolute;right:8px;bottom:36px;display:flex;flex-direction:column;gap:4px;z-index:3}
@@ -133,6 +142,7 @@ table.grid td input:focus{border-color:var(--accent);outline:none}
   #palette{left:0}#props{right:0}
   #palette.show,#props.show{display:block}
   .mobbtn{display:inline-flex}
+  .split-h{display:none}
   .hidem{display:none}
 }
 #printArea{display:none}
@@ -148,7 +158,7 @@ table.grid td input:focus{border-color:var(--accent);outline:none}
 <body>
 <div id="app">
   <div id="top">
-    <div id="brand"><b>Simulix</b><small>PRO</small></div>
+    <div id="brand"><b>Simulix</b><small>PRO</small><a id="ghLink" href="https://github.com/Pepinou66/simulix-pro" target="_blank" rel="noopener" title="Code source sur GitHub (logiciel libre GPL-3.0)" style="color:#93a4bd;text-decoration:none;font-size:11px;border:1px solid #3a4558;border-radius:4px;padding:1px 6px;font-weight:500">⌥ GitHub</a></div>
     <button class="tb mobbtn" id="bPal" title="Bibliothèque">☰ Biblio</button>
     <button class="tb" id="bNew" title="Nouveau projet">🗋<span class="hidem"> Nouveau</span></button>
     <button class="tb" id="bOpen" title="Ouvrir un projet (.sxp/.json)">📂<span class="hidem"> Ouvrir</span></button>
@@ -178,6 +188,7 @@ table.grid td input:focus{border-color:var(--accent);outline:none}
   </div>
   <div id="main">
     <div id="palette"></div>
+    <div class="split-h" id="splitL" title="Glisser pour redimensionner la bibliothèque"></div>
     <div id="center">
       <div id="views"><canvas id="cv"></canvas><div id="pane2" class="pane2"><div class="p2h"><span class="p2t">Folio</span><select id="p2sel"></select><button id="p2fit" title="Ajuster">⤢</button><button id="p2close" title="Fermer">✕</button></div><canvas id="cv2"></canvas></div></div>
       <div id="modeTag">Édition</div>
@@ -186,12 +197,15 @@ table.grid td input:focus{border-color:var(--accent);outline:none}
       <div id="zoomctl"><button id="zIn">+</button><button id="zOut">−</button><button id="zFit" title="Ajuster">⤢</button></div>
       <div id="sheets"></div>
     </div>
+    <div class="split-h" id="splitR" title="Glisser pour redimensionner le panneau"></div>
     <div id="props"></div>
   </div>
   <div id="plot"><canvas id="plotc"></canvas><div id="plotbar"><button id="plotClr">Effacer canaux</button><button id="plotClose">✕</button></div></div>
 </div>
 <div class="modal" id="modal"><div class="dlg" id="dlg"></div></div>
 <div id="toast"></div>
+<div id="ctx"></div>
+<input type="file" id="logoIn" accept="image/*" style="display:none">
 <div id="printArea"></div>
 <input type="file" id="fileIn" accept=".sxp,.json,application/json" style="display:none">
 <!--SCRIPTS-->
@@ -719,33 +733,71 @@ def('exhaust', { name: 'Échappement / silencieux', cat: 'Pneumatique', w: 40, h
   draw(ctx) { ctx.strokeStyle = INK; ctx.lineWidth = 1.6; D.line(ctx, [20, 0, 20, 14]); D.tri(ctx, 20, 22, 8, 'd', '#fff'); } });
 // Débit pompe : Q (L/min) = Cyl (cm³/tr) × N (tr/min) / 1000 × ηv  —  Puissance : P (kW) = Q × p / 600   (fiches F03A, F05A)
 function pumpQ(c) { const p = c.props; if (p.disp) return (+p.disp) * (+p.n || 1450) / 1000 * ((+p.etav || 100) / 100); return +p.q || 20; }
+// Pilotage à distance d'un limiteur (orifice X) : X à la bâche → mise à vide ; X vers un petit limiteur → second tarage
+function remoteCap(c, S) {
+  if (!c.props.rpilot) return null;
+  const i = S.info(c, 'X'); if (i.vent) return 5;
+  const r = S.root(c, 'X'); let cap = null;
+  for (const o of App.comps) if (o !== c && o.type === 'relief' && S.root(o, 'P') === r && S.vent(o, 'T')) cap = Math.min(cap ?? 1e9, +o.props.set || 100);
+  return cap;
+}
+const xcapUpdate = (c, S) => { const v = remoteCap(c, S); if (st(c).xcap !== v) { st(c).xcap = v; return true; } return false; };
+const PTYPES = { fixe: 'Cylindrée fixe', variable: 'Cylindrée variable (réglage manuel)', regp: 'Cylindrée variable pilotée — régulée en pression', ls: 'Cylindrée variable pilotée — load-sensing' };
 def('pump', {
-  name: 'Groupe hydraulique', cat: 'Hydraulique', w: 120, h: 100, ports: [P('P', 40, 0, 'h'), P('T', 100, 0, 'h')],
-  defProps: { tag: '0P1', disp: 16, n: 1450, etav: 95, pmax: 120, plage: 5 },
-  fields: [TAGF, { k: 'disp', label: 'Cylindrée pompe (cm³/tr)', type: 'num', step: 0.5 }, { k: 'n', label: 'Régime d\'entraînement (tr/min)', type: 'num' }, { k: 'etav', label: 'Rendement volumétrique (%)', type: 'num' },
-    { k: 'pmax', label: 'Tarage du limiteur = pression d\'ouverture (bar)', type: 'num' }, { k: 'plage', label: 'Plage d\'ouverture du limiteur (% à plein débit)', type: 'num' }, REFF],
-  catalog: [{ ref: 'Pompe à engrenages 8 cm³/tr — 1450 tr/min', props: { disp: 8, n: 1450, pmax: 160 } }, { ref: 'Pompe à engrenages 16 cm³/tr — 1450 tr/min', props: { disp: 16, n: 1450, pmax: 180 } }, { ref: 'Pompe à engrenages 25 cm³/tr — 1450 tr/min', props: { disp: 25, n: 1450, pmax: 200 } },
-    { ref: 'Pompe à engrenages internes 32 cm³/tr — 1450 tr/min', props: { disp: 32, n: 1450, pmax: 250 } }, { ref: 'Pompe à palettes 40 cm³/tr — 1450 tr/min', props: { disp: 40, n: 1450, pmax: 140 } }, { ref: 'Pompe à pistons axiaux 45 cm³/tr — 1800 tr/min', props: { disp: 45, n: 1800, pmax: 280 } }],
-  faults: [['low', 'Pompe usée (fuites internes : débit réduit)'], ['cav', 'Cavitation : aspiration obstruée / prise d\'air'], ['relief', 'Limiteur de pression déréglé (taré trop bas)'], ['reliefOpen', 'Limiteur de pression bloqué ouvert (clapet pollué)']],
-  bom: 'Centrale hydraulique (pompe, moteur, limiteur, réservoir)',
-  srcVal(c) { let q = pumpQ(c), p = +c.props.pmax || 120; if (c.fault === 'low') { q *= 0.55; } if (c.fault === 'cav') q *= 0.5; if (c.fault === 'relief') p *= 0.3; if (c.fault === 'reliefOpen') p = 4; return { q, p, plage: (+c.props.plage || 0) / 100 }; },
-  sources(c) { const v = this.srcVal(c); return [['P', 'hyd', v.p, v.q, v.plage], ['T', 'tank']]; },
+  name: 'Groupe hydraulique', cat: 'Hydraulique', w: 120, h: 100,
+  portsFn(c) { const o = [P('P', 40, 0, 'h', 'P'), P('T', 100, 0, 'h', 'T')]; if (c.props.rpilot) o.push(P('X', 120, 60, 'h', 'X (pilotage du limiteur)')); return o; },
+  defProps: { tag: '0P1', ptype: 'fixe', disp: 16, n: 1450, etav: 95, cmd: 100, pc: 100, dls: 20, pmax: 120, plage: 5, rpilot: false },
+  fieldsFn: c => [TAGF, { k: 'ptype', label: 'Type de pompe', type: 'sel', opts: Object.keys(PTYPES), labels: Object.values(PTYPES) },
+    { k: 'disp', label: c.props.ptype === 'fixe' ? 'Cylindrée (cm³/tr)' : 'Cylindrée maxi (cm³/tr)', type: 'num', step: 0.5 }, { k: 'n', label: 'Régime d\'entraînement (tr/min)', type: 'num' }, { k: 'etav', label: 'Rendement volumétrique (%)', type: 'num' },
+    ...(c.props.ptype === 'variable' ? [{ k: 'cmd', label: 'Cylindrée réglée (% du maxi)', type: 'range' }] : []),
+    ...(c.props.ptype === 'regp' ? [{ k: 'pc', label: 'Consigne du régulateur de pression (bar)', type: 'num' }] : []),
+    ...(c.props.ptype === 'ls' ? [{ k: 'dls', label: 'Δp de stand-by load-sensing (bar)', type: 'num' }] : []),
+    { k: 'pmax', label: 'Tarage du limiteur de pression (bar)', type: 'num' }, { k: 'plage', label: 'Plage d\'ouverture du limiteur (% à plein débit)', type: 'num' },
+    { k: 'rpilot', label: 'Limiteur piloté (orifice X de pilotage à distance / mise à vide)', type: 'chk' }, REFF],
+  catalog: [{ ref: 'Pompe à engrenages 8 cm³/tr — 1450 tr/min', props: { ptype: 'fixe', disp: 8, n: 1450, pmax: 160 } }, { ref: 'Pompe à engrenages 16 cm³/tr — 1450 tr/min', props: { ptype: 'fixe', disp: 16, n: 1450, pmax: 180 } }, { ref: 'Pompe à engrenages 25 cm³/tr — 1450 tr/min', props: { ptype: 'fixe', disp: 25, n: 1450, pmax: 200 } },
+    { ref: 'Pompe à engrenages internes 32 cm³/tr — 1450 tr/min', props: { ptype: 'fixe', disp: 32, n: 1450, pmax: 250 } }, { ref: 'Pompe à palettes à cylindrée variable 40 cm³/tr', props: { ptype: 'regp', disp: 40, n: 1450, pc: 100, pmax: 140 } },
+    { ref: 'Pompe à pistons axiaux 45 cm³/tr régulée en pression', props: { ptype: 'regp', disp: 45, n: 1800, pc: 210, pmax: 250 } }, { ref: 'Pompe à pistons axiaux 45 cm³/tr load-sensing', props: { ptype: 'ls', disp: 45, n: 1800, dls: 20, pmax: 280 } }],
+  faults: [['low', 'Pompe usée (fuites internes : débit réduit)'], ['cav', 'Cavitation : aspiration obstruée / prise d\'air'], ['relief', 'Limiteur de pression déréglé (taré trop bas)'], ['reliefOpen', 'Limiteur de pression bloqué ouvert (clapet pollué)'], ['reg', 'Régulateur de la pompe bloqué en grande cylindrée']],
+  bom: c => 'Centrale hydraulique — pompe ' + PTYPES[c.props.ptype || 'fixe'].toLowerCase() + ' ' + c.props.disp + ' cm³/tr, limiteur ' + (c.props.rpilot ? 'piloté' : 'à action directe'),
+  srcVal(c) {
+    let q = pumpQ(c) * (c.props.ptype === 'variable' ? clamp(+c.props.cmd || 0, 0, 100) / 100 : 1), p = +c.props.pmax || 120;
+    if (c.fault === 'low') q *= 0.55; if (c.fault === 'cav') q *= 0.5; if (c.fault === 'relief') p *= 0.3; if (c.fault === 'reliefOpen') p = 4;
+    const x = st(c).xcap; if (x != null) p = Math.min(p, x);
+    const reg = c.fault === 'reg' ? null : c.props.ptype === 'regp' ? Math.min(+c.props.pc || 100, p) : null, ls = c.fault === 'reg' ? null : c.props.ptype === 'ls' ? (+c.props.dls || 20) : null;
+    return { q, p, plage: (+c.props.plage || 0) / 100, reg, ls };
+  },
+  update: xcapUpdate,
+  sources(c) { const v = this.srcVal(c); return [['P', 'hyd', v.p, v.q, v.plage, { reg: v.reg, ls: v.ls }], ['T', 'tank']]; },
+  press(c, x, y) {
+    if (x > 56 && x < 98 && y > 22 && y < 64) { ask('Tarage du limiteur de pression (bar)', String(c.props.pmax)).then(v => { if (v != null && +v > 0) { c.props.pmax = +v; App.changed(); toast('Limiteur taré à ' + (+v) + ' bar'); } }); return true; }
+    if (c.props.ptype === 'variable' && x < 56) { c.props.cmd = ((+c.props.cmd || 0) >= 100 ? 25 : (+c.props.cmd || 0) + 25); Props.render(); return true; }
+  },
+  hint: (c, x, y) => (x > 56 && x < 98 && y > 22 && y < 64) ? 'Cliquer : modifier le tarage du limiteur (' + c.props.pmax + ' bar)' : c.props.ptype === 'variable' && x < 56 ? 'Cliquer : régler la cylindrée (' + c.props.cmd + ' %)' : PTYPES[c.props.ptype || 'fixe'],
   draw(ctx, c, S) {
-    ctx.strokeStyle = INK; ctx.lineWidth = 1.6;
+    const t = c.props.ptype || 'fixe'; ctx.strokeStyle = INK; ctx.lineWidth = 1.6;
     D.line(ctx, [40, 0, 40, 38]); D.circle(ctx, 40, 52, 14, '#fff'); D.tri(ctx, 40, 42, 5, 'u', INK);
     D.line(ctx, [40, 66, 40, 84]); D.line(ctx, [26, 52, 12, 52]);
-    D.line(ctx, [8, 44, 8, 60]); D.text(ctx, 'M', 4, 36, 9, INK, 'center', true);
+    D.line(ctx, [8, 44, 8, 60]); D.text(ctx, 'M', 4, 70, 9, INK, 'center', true);
+    if (t !== 'fixe') D.arrow(ctx, 26, 68, 56, 36, 5); // cylindrée variable
+    if (t === 'regp' || t === 'ls') { // pilotage du plateau
+      D.dash(ctx, 1); D.line(ctx, [40, 26, 16, 26, 16, 32]); D.dash(ctx, 0); D.rect(ctx, 10, 32, 12, 9, '#fff'); D.arrow(ctx, 22, 37, 28, 42, 3);
+      D.text(ctx, t === 'ls' ? 'LS' : 'p', 14, 20, 8, '#475569', 'center', true);
+    }
+    if (t === 'variable') D.text(ctx, (c.props.cmd | 0) + '%', 36, 78, 8, '#1d4ed8', 'right', true);
     const lam = S && S.lam.get(S.root(c, 'P')) > 0.05;
-    D.line(ctx, [40, 20, 72, 20, 72, 30]); D.rect(ctx, 64, 30, 16, 26, lam ? '#fecaca' : '#fff'); D.arrow(ctx, 72, 52, 72, 34, 4); D.spring(ctx, 80, 43, 92, 4);
-    D.dash(ctx, 1); D.line(ctx, [60, 20, 60, 50, 64, 50]); D.dash(ctx, 0);
+    // limiteur de pression : normalement fermé, pilotage amont contre le ressort, flèche vers le réservoir
+    D.line(ctx, [40, 20, 72, 20, 72, 30]); D.rect(ctx, 64, 30, 16, 26, lam ? '#fecaca' : '#fff'); D.arrow(ctx, 70, 34, 70, 52, 4); D.spring(ctx, 80, 43, 92, 4); D.line(ctx, [88, 36, 94, 50]);
+    D.dash(ctx, 1); D.line(ctx, [60, 20, 60, 36, 64, 36]); D.dash(ctx, 0);
+    if (c.props.rpilot) { ctx.strokeStyle = '#7c3aed'; D.dash(ctx, 1); D.line(ctx, [92, 43, 108, 43, 108, 60, 120, 60]); D.dash(ctx, 0); D.text(ctx, 'X', 114, 54, 8, '#7c3aed', 'center', true); ctx.strokeStyle = INK; }
     D.line(ctx, [72, 56, 72, 84]); D.line(ctx, [100, 0, 100, 84]);
     ctx.beginPath(); ctx.moveTo(30, 80); ctx.lineTo(30, 96); ctx.lineTo(112, 96); ctx.lineTo(112, 80); ctx.stroke();
-    D.text(ctx, 'P', 46, 8, 8, '#64748b'); D.text(ctx, 'T', 106, 8, 8, '#64748b');
-    if (lam && (Date.now() / 200 | 0) % 2) D.text(ctx, '≈', 88, 62, 12, '#dc2626', 'center', true);
+    D.text(ctx, 'P', 46, 8, 8, '#64748b'); D.text(ctx, 'T', 106, 8, 8, '#64748b'); D.text(ctx, (st(c).xcap != null ? st(c).xcap : c.props.pmax) + ' bar', 87, 64, 6, '#64748b');
+    if (lam && (Date.now() / 200 | 0) % 2) D.text(ctx, '≈', 88, 72, 12, '#dc2626', 'center', true);
   },
   probe(c, S) {
-    const v = this.srcVal(c), o = { 'Débit (Cyl × N / 1000 × ηv)': fmt(v.q, 1) + ' L/min', 'Pression d\'ouverture limiteur': fmt(v.p, 0) + ' bar', 'Pression à plein débit': fmt(v.p * (1 + v.plage), 0) + ' bar' };
-    if (S) { const r = S.root(c, 'P'), p = S.P(c, 'P'); o['Pression refoulement (M1)'] = fmt(p, 1) + ' bar'; o['Puissance hydraulique Q×p/600'] = fmt(v.q * p / 600, 2) + ' kW'; const lam = S.lam.get(r) || 0; o['Laminage au limiteur'] = lam > 0.05 ? fmt(lam, 2) + ' kW → échauffement de l\'huile' : 'non'; o['Température huile'] = fmt(S.oilT, 1) + ' °C'; o['Viscosité estimée (ISO VG 46)'] = fmt(S.visc, 1) + ' cSt' + (S.visc < 15 ? ' (trop faible)' : ''); }
+    const v = this.srcVal(c), o = { 'Type': PTYPES[c.props.ptype || 'fixe'], 'Débit maxi (Cyl × N / 1000 × ηv)': fmt(v.q, 1) + ' L/min', 'Tarage limiteur': fmt(v.p, 0) + ' bar' + (st(c).xcap != null ? ' (piloté par X)' : ''), 'Pression à plein débit': fmt(v.p * (1 + v.plage), 0) + ' bar' };
+    if (v.reg != null) o['Consigne régulateur'] = v.reg + ' bar (la pompe réduit son débit, pas de laminage)'; if (v.ls != null) o['Stand-by LS'] = v.ls + ' bar au-dessus de la charge';
+    if (S) { const r = S.root(c, 'P'), p = S.P(c, 'P'); o['Pression refoulement (M1)'] = fmt(p, 1) + ' bar'; o['Débit refoulé'] = fmt(S.flow.get(r) || 0, 1) + ' L/min'; o['Puissance hydraulique Q×p/600'] = fmt((S.flow.get(r) || 0) * p / 600 + (S.lam.get(r) || 0), 2) + ' kW'; const lam = S.lam.get(r) || 0; o['Laminage au limiteur'] = lam > 0.05 ? fmt(lam, 2) + ' kW → échauffement de l\'huile' : 'non'; o['Température huile'] = fmt(S.oilT, 1) + ' °C'; o['Viscosité estimée (ISO VG 46)'] = fmt(S.visc, 1) + ' cSt' + (S.visc < 15 ? ' (trop faible)' : ''); }
     return o;
   },
   plot: (c, S) => S ? S.P(c, 'P') : 0, plotUnit: 'bar'
@@ -1061,15 +1113,20 @@ def('filter', {
 });
 def('relief', {
   name: 'Limiteur de pression (LP / anti-choc)', cat: 'Appareils de pression', w: 60, h: 80, ports: [P('P', 30, 80, 'h', 'P'), P('T', 30, 0, 'h', 'T')],
-  defProps: { tag: '1V4', set: 100, vtag: '' }, fields: [TAGF, { k: 'set', label: 'Tarage — pression d\'ouverture (bar)', type: 'num' }, { k: 'vtag', label: 'Mise à vide électrique : repère électro-aimant (vide = sans)', type: 'text' }, REFF],
+  portsFn(c) { const o = [P('P', 30, 80, 'h', 'P'), P('T', 30, 0, 'h', 'T')]; if (c.props.rpilot) o.push(P('X', 60, 40, 'h', 'X (pilotage à distance)')); return o; },
+  defProps: { tag: '1V4', set: 100, vtag: '', rpilot: false }, fields: [TAGF, { k: 'set', label: 'Tarage — pression d\'ouverture (bar)', type: 'num' }, { k: 'rpilot', label: 'Action pilotée avec orifice X (pilotage à distance / mise à vide)', type: 'chk' }, { k: 'vtag', label: 'Mise à vide électrique : repère électro-aimant (vide = sans)', type: 'text' }, REFF],
+  update: xcapUpdate,
+  press(c) { ask('Tarage du limiteur ' + (c.props.tag || '') + ' (bar)', String(c.props.set)).then(v => { if (v != null && +v > 0) { c.props.set = +v; App.changed(); toast('Tarage : ' + (+v) + ' bar'); } }); return true; },
+  hint: c => 'Cliquer : modifier le tarage (' + c.props.set + ' bar)',
   faults: [['open', 'Clapet bloqué ouvert (pollution sur le siège)'], ['stuck', 'Clapet grippé fermé : plus de protection'], ['low', 'Ressort affaibli : tarage trop bas']],
   bom: 'Limiteur de pression à action directe',
-  cap(c, uf, m) { if (c.fault === 'stuck') return null; const t = m.get(uf.find(K(c, 'T'))); if (!t || !t.vent) return null; let v = +c.props.set || 100; if (c.props.vtag && !(Sim.S && Sim.S.tags[c.props.vtag])) v = 2; if (c.fault === 'open') v = 3; if (c.fault === 'low') v *= 0.4; return ['P', v]; },
+  cap(c, uf, m) { if (c.fault === 'stuck') return null; const t = m.get(uf.find(K(c, 'T'))); if (!t || !t.vent) return null; let v = +c.props.set || 100; if (c.props.vtag && !(Sim.S && Sim.S.tags[c.props.vtag])) v = 2; if (c.fault === 'open') v = 3; if (c.fault === 'low') v *= 0.4; if (st(c).xcap != null) v = Math.min(v, st(c).xcap); return ['P', v]; },
   draw(ctx, c, S) {
     const open = S && S.P(c, 'P') >= (+c.props.set || 100) * 0.98 && S.vent(c, 'T');
     ctx.strokeStyle = INK; ctx.lineWidth = 1.6; D.line(ctx, [30, 80, 30, 60]); D.line(ctx, [30, 20, 30, 0]);
     ctx.save(); ctx.translate(0, 0); drawPV(ctx, true, c.props.set, open); ctx.restore();
     D.dash(ctx, 1); D.line(ctx, [30, 70, 6, 70, 6, 56, 14, 56]); D.dash(ctx, 0); D.tri(ctx, 11, 56, 3, 'r', INK);
+    if (c.props.rpilot) { ctx.strokeStyle = '#7c3aed'; D.dash(ctx, 1); D.line(ctx, [52, 32, 60, 32, 60, 40]); D.dash(ctx, 0); D.text(ctx, 'X', 54, 46, 8, '#7c3aed', 'center', true); }
   },
   probe: (c, S) => ({ 'Pression amont': S ? fmt(S.P(c, 'P'), 1) + ' bar' : '—', 'État': S && S.P(c, 'P') >= (+c.props.set || 100) * 0.98 ? 'OUVERT (laminage)' : 'fermé' })
 });
@@ -1335,7 +1392,7 @@ const PALETTE = [
     ['valve', 'Distributeur 5/3 centre fermé', { vt: 'v53', aL: 'sol', aR: 'sol', tL: 'Y1', tR: 'Y2' }],
     ['motorf', 'Moteur pneumatique', { medium: 'pneu', tag: 'M1' }]]],
   ['Hydraulique', [
-    ['pump'], ['tank'],
+    ['pump'], ['pump', 'Groupe — pompe à cylindrée variable', { ptype: 'variable' }], ['pump', 'Groupe — pompe régulée en pression', { ptype: 'regp', disp: 40, pc: 100, pmax: 140 }], ['pump', 'Groupe — pompe load-sensing', { ptype: 'ls', disp: 45, n: 1800, pmax: 250 }], ['pump', 'Groupe — limiteur piloté (X)', { rpilot: true }], ['tank'],
     ['cyl', 'Vérin double effet', { medium: 'hyd', bore: 63, rod: 36, stroke: 300, load: 10000 }],
     ['cyl', 'Vérin simple effet', { medium: 'hyd', single: true, bore: 50, rod: 36, stroke: 200 }],
     ['valve', 'Distributeur 4/3 levier tandem', { vt: 'v43t', medium: 'hyd', aL: 'lever', aR: 'lever', tag: '1V1' }],
@@ -1348,7 +1405,7 @@ const PALETTE = [
     ['valve', 'Distributeur 4/3 centre ouvert H', { vt: 'v43o', medium: 'hyd', aL: 'sol', aR: 'sol', tL: 'Y1', tR: 'Y2' }],
     ['valve', 'Distributeur 4/3 centre Y (A et B→T)', { vt: 'v43f', medium: 'hyd', aL: 'sol', aR: 'sol', tL: 'Y1', tR: 'Y2' }],
     ['motorf', 'Moteur hydraulique', { medium: 'hyd' }], ['pumpvar']]],
-  ['Appareils de pression', [['relief'], ['relief', 'Limiteur avec mise à vide électrique', { vtag: 'Y0', tag: '0V1' }], ['reducer'], ['seqv'], ['cbv']]],
+  ['Appareils de pression', [['relief'], ['relief', 'Limiteur à action pilotée (orifice X)', { rpilot: true, set: 160, tag: '0V1' }], ['relief', 'Limiteur avec mise à vide électrique', { vtag: 'Y0', tag: '0V1' }], ['reducer'], ['seqv'], ['cbv']]],
   ['Appareils fluidiques', [['filter'], ['throttle'], ['throttle', 'Limiteur bidirectionnel', { check: false }], ['check'], ['shuttle'], ['twopress'], ['pswitch']]],
   ['Électrique — commande', [['supply'], ['pb_no'], ['pb_nc'], ['sw_no'], ['estop'], ['coil'], ['k_no'], ['k_nc'], ['coil_t'], ['ls_no'], ['ls_nc'], ['prox'], ['sol'], ['lamp'], ['motor'], ['buzzer']]],
   ['Électrique — puissance', [['mains3'], ['mains3', 'Réseau triphasé 380 V', { U: '380' }], ['mains1'], ['transfo'], ['psu'], ['breaker'], ['breaker', 'Disjoncteur 1P+N', { poles: 2, In: 10 }], ['rcd'], ['rcd', 'Différentiel 4P 30 mA', { poles: 4 }], ['fuse'], ['kmp'], ['rth'], ['motor3'], ['motor', 'Moteur monophasé 230 V', { vnom: '230', power: 750, tag: 'M2' }], ['lamp', 'Voyant 230 V', { vnom: '230', power: 5 }], ['coil', 'Bobine de contacteur 230 V', { vnom: '230', tag: 'KM1', power: 8 }], ['coil', 'Bobine de contacteur 24 V', { tag: 'KM1', power: 5 }]]],
@@ -1456,13 +1513,13 @@ const Sim = {
     const g = r => { let o = m.get(r); if (!o) m.set(r, o = { plus: false, zero: false, pr: 0, q: 0, vent: false, med: null, src: false, sup: [], plage: 0, lowp: 0 }); return o; };
     for (const c of App.comps) {
       const d = DEFS[c.type]; if (!d.sources) continue;
-      for (const [p, t, v, q, pl] of d.sources(c, S)) {
+      for (const [p, t, v, q, pl, ex] of d.sources(c, S)) {
         const o = g(uf.find(K(c, p)));
         if (t === 'pot') { (o.pots = o.pots || []).push(v); o.sup.push(c); if (v.dc > 0 || Math.hypot(v.re, v.im) > 0) o.plus = true; else o.zero = true; }
         else if (t === '+') { (o.pots = o.pots || []).push({ sys: c.id, re: 0, im: 0, dc: 24, ph: '+' }); o.plus = true; o.sup.push(c); }
         else if (t === '0') { (o.pots = o.pots || []).push({ sys: c.id, re: 0, im: 0, dc: 0, ph: '0' }); o.zero = true; o.sup.push(c); }
         else if (t === 'pneu') { o.pr = Math.max(o.pr, v); o.src = true; o.med = 'p'; }
-        else if (t === 'hyd') { o.pr = Math.max(o.pr, v); o.q += q; o.src = true; o.med = 'h'; o.plage = Math.max(o.plage, pl || 0); }
+        else if (t === 'hyd') { o.pr = Math.max(o.pr, v); o.q += q; o.src = true; o.med = 'h'; o.plage = Math.max(o.plage, pl || 0); if (ex && ex.reg != null) o.reg = Math.min(o.reg ?? 1e9, ex.reg); if (ex && ex.ls != null) o.ls = ex.ls; }
         else if (t === 'lowp') { o.vent = true; o.med = 'h'; o.lowp = Math.max(o.lowp, v); }
         else if (t === 'vent') { o.vent = true; o.med = o.med || 'p'; }
         else if (t === 'tank') { o.vent = true; o.med = 'h'; }
@@ -1523,7 +1580,7 @@ const Sim = {
     const addFlow = (r, q) => flow.set(r, (flow.get(r) || 0) + q);
     for (const [root, list] of groups) {
       const info = S.net.get(root); if (!info) continue;
-      const hyd = info.med === 'h', pS = info.pr, pFull = pS * (1 + (info.plage || 0));
+      const hyd = info.med === 'h', pS = info.reg != null ? Math.min(info.pr, info.reg) : info.pr, pFull = pS * (1 + (info.plage || 0));
       const moving = list.filter(([, r]) => r.preq <= pS + 1e-6);
       if (hyd) {
         // le débit va au récepteur le moins chargé d'abord (fiche F05F : le vérin le moins chargé sort en premier)
@@ -1538,6 +1595,8 @@ const Sim = {
           addFlow(root, qIn); if (r.out) addFlow(S.root(c, r.out), r.motor ? q : q * (r.dir > 0 ? cylGeom(c).Aa / cylGeom(c).Ab : cylGeom(c).Ab / cylGeom(c).Aa));
         }
         const byp = Math.max(0, info.q - used);
+        if (info.ls != null) { dispP.set(root, n ? Math.min(pS, pmin + info.ls) : pS); continue; } // à l'arrêt en butée : coupure de pression, débit nul // load-sensing : p = charge + Δp, débit ajusté
+        if (info.reg != null && (byp > 0.01 || throttled)) { dispP.set(root, n ? Math.min(info.reg, pS) : info.reg); continue; } // régulateur : la pompe se dé-cylindre
         // limiteur : ouvert dès que la pression atteint le tarage ; pression à plein débit = tarage + plage
         let p = n ? Math.min(pS, pmin + 2) : pFull;
         if (n && (throttled || byp > 0.01)) p = pS + (pFull - pS) * (byp / info.q);
@@ -1552,7 +1611,10 @@ const Sim = {
       }
     }
     // laminage au limiteur quand aucun récepteur n'est alimenté (centre fermé, vérin en butée)
-    for (const [r, i] of S.net) if (i.src && !i.vent && i.med === 'h' && !groups.has(r)) { dispP.set(r, i.pr * (1 + (i.plage || 0))); lam.set(r, i.q * i.pr * (1 + (i.plage || 0)) / 600); }
+    for (const [r, i] of S.net) if (i.src && !i.vent && i.med === 'h' && !groups.has(r)) {
+      if (i.ls != null) dispP.set(r, i.ls); else if (i.reg != null) dispP.set(r, Math.min(i.reg, i.pr));
+      else { dispP.set(r, i.pr * (1 + (i.plage || 0))); lam.set(r, i.q * i.pr * (1 + (i.plage || 0)) / 600); }
+    }
     // pression créée par la charge dans une chambre isolée (fiche F05K : p = F / S)
     S.hold = new Map();
     for (const c of acts) {
@@ -2037,8 +2099,9 @@ const App = {
   },
   rotSel() { if (Sim.S) return; this.sel.forEach(id => { const c = this.byId(id); c.rot = ((c.rot || 0) + 1) % 4; }); if (this.sel.size) this.changed(); },
   copy() { if (!this.sel.size) return; const ids = this.sel; this.clip = { comps: this.comps.filter(c => ids.has(c.id)).map(c => JSON.parse(JSON.stringify({ ...c, state: {} }))), wires: this.wires.filter(w => ids.has(w.a.c) && ids.has(w.b.c)).map(w => ({ ...w })) }; toast(ids.size + ' élément(s) copié(s)'); },
-  paste() {
+  paste(at) {
     if (!this.clip || Sim.S) return; const map = {}; this.sel.clear();
+    if (at && this.clip.comps.length) { const mx = Math.min(...this.clip.comps.map(c => c.x)), my = Math.min(...this.clip.comps.map(c => c.y)); this.clip.comps.forEach(c => { c.x += snap(at.x - mx) - 40; c.y += snap(at.y - my) - 40; }); }
     this.clip.comps.forEach(c0 => { const c = JSON.parse(JSON.stringify(c0)); map[c.id] = c.id = this.uid(); c.x += 40; c.y += 40; c.sheet = this.sheet; c.state = {}; if (c.props.tag && !NOAUTOTAG.includes(c.type)) c.props.tag = this.autoTag(c.type, c.props.tag); this.comps.push(c); this.sel.add(c.id); });
     this.clip.wires.forEach(w => this.wires.push({ ...w, id: this.uid(), a: { c: map[w.a.c], p: w.a.p }, b: { c: map[w.b.c], p: w.b.p } }));
     this.clip.comps.forEach(c => { c.x += 40; c.y += 40; }); this.changed();
@@ -2129,8 +2192,15 @@ function drawFrame(g) {
   g.fillText('Date : ' + (P.date || ''), cx + 390, cy + 57); g.fillText('Révision : ' + (P.rev || ''), cx + 500, cy + 57);
   g.font = '600 16px system-ui'; g.fillStyle = '#0f172a'; g.fillText('Folio ' + (App.sheet + 1) + ' / ' + App.sheets.length, cx + 390, cy + 92);
   g.font = '600 10px system-ui'; g.fillStyle = '#2563eb'; g.textAlign = 'right'; g.fillText('Simulix Pro', cx + cw - 8, cy + 14);
+  // logo de l'entreprise / de l'établissement (case à gauche du cartouche)
+  if (P.logo) {
+    const lx = cx - 150, ly = cy; g.fillStyle = '#fff'; g.fillRect(lx, ly, 150, ch); g.strokeStyle = '#334155'; g.lineWidth = 1.5; g.strokeRect(lx, ly, 150, ch);
+    const im = logoImg(P.logo); if (im && im.complete && im.naturalWidth) { const k = Math.min(136 / im.naturalWidth, (ch - 14) / im.naturalHeight); const iw = im.naturalWidth * k, ih = im.naturalHeight * k; g.drawImage(im, lx + (150 - iw) / 2, ly + (ch - ih) / 2, iw, ih); }
+  }
   g.restore();
 }
+let _logo = { src: null, img: null };
+function logoImg(src) { if (_logo.src !== src) { _logo = { src, img: new Image() }; _logo.img.src = src; } return _logo.img; }
 function zoneOf(c) { const W = FRAME.w - 40, H = FRAME.h - 40, b = compBBox(c); const x = b.x + b.w / 2 - 20, y = b.y + b.h / 2 - 20; return (clamp(Math.floor(x / (W / 8)), 0, 7) + 1) + 'ABCDEF'[clamp(Math.floor(y / (H / 6)), 0, 5)]; }
 function xrefs(c) {
   const tag = c.props.tag; if (!tag) return '';
@@ -2346,7 +2416,64 @@ function endPtr(e) {
 }
 cv.addEventListener('pointerup', endPtr); cv.addEventListener('pointercancel', endPtr);
 cv.addEventListener('dblclick', e => { const c = hitComp(View.toWorld(e.offsetX, e.offsetY)); if (c && c.type === 'plc') PE.open(c); });
-cv.addEventListener('contextmenu', e => e.preventDefault());
+cv.addEventListener('contextmenu', e => {
+  e.preventDefault();
+  if (drag && drag.mode === 'pan' && Math.hypot(e.offsetX - drag.sx, e.offsetY - drag.sy) > 5) return; // c'était un déplacement de vue
+  drag = null; Ctx.open(e.clientX, e.clientY, View.toWorld(e.offsetX, e.offsetY));
+});
+/* ===================== MENU CLIC DROIT ===================== */
+const Ctx = {
+  open(x, y, p) {
+    const el = $('#ctx'), S = Sim.S, items = [];
+    const it = (label, fn, dis) => items.push({ label, fn, dis }), sep = () => items.push('-'), hd = t => items.push({ hd: t });
+    const c = hitComp(p), w = !c && hitWire(p);
+    if (c) {
+      if (!App.sel.has(c.id)) { App.sel = new Set([c.id]); App.selWire = null; }
+      const d = DEFS[c.type], multi = App.sel.size > 1;
+      hd(multi ? App.sel.size + ' éléments sélectionnés' : (c.props.tag ? c.props.tag + ' — ' : '') + (typeof d.bom === 'function' ? d.bom(c) : d.name).slice(0, 48));
+      if (!multi) {
+        it('✎ Modifier les propriétés', () => { Props.render(); if (innerWidth < 900) $('#props').classList.add('show'); setTimeout(() => { const f = $('#props input, #props select'); f && f.focus(); }, 50); });
+        if (c.props.tag !== undefined && !d.noLabel) it('🏷 Renommer le repère…', async () => { const v = await ask('Repère', c.props.tag); if (v != null && v.trim()) { c.props.tag = v.trim(); App.changed(); } });
+        if (c.type === 'plc') it('⌨ Programmer l\'automate', () => PE.open(c));
+        if (c.type === 'pump') it('🔧 Modifier le tarage du limiteur…', async () => { const v = await ask('Tarage du limiteur de pression (bar)', String(c.props.pmax)); if (v != null && +v > 0) { c.props.pmax = +v; App.changed(); } });
+        if (c.type === 'relief' || c.type === 'seqv' || c.type === 'reducer' || c.type === 'cbv') it('🔧 Modifier le réglage…', async () => { const v = await ask('Réglage (bar)', String(c.props.set)); if (v != null && +v > 0) { c.props.set = +v; App.changed(); } });
+        if (c.type === 'text') it('✎ Modifier le texte…', async () => { const v = await ask('Texte', c.props.text, true); if (v != null) { c.props.text = v; App.changed(); } });
+        if (d.plot) it('📈 Ajouter au traceur', () => Plot.add(c));
+        const fl = faultList(c);
+        if (fl.length && !App.hideFaults) { sep(); hd('Défaillance simulée'); it((c.fault ? '' : '✔ ') + 'Aucune', () => { c.fault = null; App.changed(); }); fl.forEach(([k, l]) => it((c.fault === k ? '✔ ' : '') + l, () => { c.fault = k; App.changed(); })); }
+        if ((!d.noLabel && c.props.tag) || xrefs(c)) { sep(); hd('Position du repère'); LABPOS.forEach(([k, l]) => it((labPos(c) === k ? '✔ ' : '') + l, () => { c.props.labPos = k; if (k === 'free' && c.props.labDx == null) { c.props.labDx = 0; c.props.labDy = -compBBox(c).h / 2 - 16; } App.changed(); })); }
+      }
+      sep();
+      it('⟳ Pivoter', () => App.rotSel(), !!S); it('⧉ Dupliquer', () => App.dup(), !!S); it('📋 Copier', () => App.copy());
+      it('🗑 Supprimer' + (multi ? ' la sélection' : ''), () => App.delSel(), !!S);
+    } else if (w) {
+      App.selWire = w.id; App.sel.clear(); const fl = w.kind !== 'e' && w.kind !== 'l' && w.kind !== 'x';
+      hd('Liaison ' + kname(w.kind));
+      if (!App.hideFaults) it(w.cut ? (fl ? '✔ Remplacer le flexible' : '✔ Réparer le fil') : (fl ? '💥 Simuler une rupture de flexible' : '✂ Simuler un fil coupé'), () => { w.cut = !w.cut; App.changed(); });
+      it('↺ Tracé automatique', () => { w.mo = null; App.changed(); }, !!S);
+      it('🗑 Supprimer la liaison', () => App.delSel(), !!S);
+    } else {
+      hd('Folio ' + (App.sheet + 1) + ' — ' + App.sheets[App.sheet].name);
+      if (!S) {
+        items.push({ search: true, p });
+        it('📋 Coller ici', () => App.paste(p), !App.clip);
+        it('☐ Tout sélectionner', () => { App.sel = new Set(App.sheetComps().map(c => c.id)); Props.render(); });
+        sep(); it('＋ Nouveau folio', () => { App.sheets.push({ name: 'Folio ' + (App.sheets.length + 1) }); App.sheet = App.sheets.length - 1; App.changed(); Sheets.render(); View.fit(); });
+        it('✎ Renommer le folio…', () => Sheets.rename(App.sheet));
+      }
+      it('⤢ Ajuster la vue', () => View.fit());
+    }
+    Props.render();
+    el.innerHTML = items.map((x, i) => x === '-' ? '<div class="sep2"></div>' : x.hd ? `<div class="hd">${esc(x.hd)}</div>` : x.search ? `<div class="hd">➕ Ajouter un composant</div><input id="ctxQ" placeholder="Rechercher (vérin, distributeur, bobine…)"><div id="ctxR"></div>` : `<div class="it ${x.dis ? 'dis' : ''}" data-i="${i}">${esc(x.label)}</div>`).join('');
+    el.style.display = 'block';
+    const r = el.getBoundingClientRect(); el.style.left = Math.min(x, innerWidth - r.width - 6) + 'px'; el.style.top = Math.min(y, innerHeight - r.height - 6) + 'px';
+    el.onclick = e => { const d = e.target.closest('[data-i]'); if (d) { this.close(); items[+d.dataset.i].fn(); } const a = e.target.closest('[data-add]'); if (a) { const en = Pal.entries().find(q => q.key === a.dataset.add); this.close(); if (en) { const nc = App.addComp(en, p.x, p.y); App.sel = new Set([nc.id]); App.changed(); } } };
+    const q = $('#ctxQ'); if (q) { const upd = () => { const f = q.value.toLowerCase(); const list = Pal.entries().filter(en => (!App.lib || App.lib.includes(en.key)) && (!f || en.label.toLowerCase().includes(f) || en.cat.toLowerCase().includes(f))).slice(0, f ? 14 : 8); $('#ctxR').innerHTML = list.map(en => `<div class="it" data-add="${esc(en.key)}">${esc(en.label)} <span style="color:#94a3b8;font-size:11px">${esc(en.cat)}</span></div>`).join(''); }; q.oninput = upd; upd(); setTimeout(() => q.focus(), 20); q.onkeydown = e => { if (e.key === 'Enter') { const a = $('#ctxR [data-add]'); a && a.click(); } if (e.key === 'Escape') this.close(); }; }
+  },
+  close() { $('#ctx').style.display = 'none'; }
+};
+document.addEventListener('pointerdown', e => { if (!e.target.closest('#ctx')) Ctx.close(); }, true);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') Ctx.close(); });
 cv.addEventListener('wheel', e => { e.preventDefault(); if (e.ctrlKey || !e.shiftKey && Math.abs(e.deltaY) > 0 && !e.deltaX) View.zoomAt(e.offsetX, e.offsetY, Math.pow(1.0015, -e.deltaY)); else { App.view.ox -= e.deltaX; App.view.oy -= e.deltaY; } }, { passive: false });
 document.addEventListener('keydown', e => {
   if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) || $('#modal').classList.contains('open')) return;
@@ -2508,6 +2635,7 @@ const Props = {
     const P = App.project, n = App.comps.length;
     el.innerHTML = `<h3>Projet</h3><div class="pp">
       ${['name:Nom du projet', 'author:Auteur', 'company:Société', 'rev:Révision', 'date:Date'].map(s => { const [k, l] = s.split(':'); return `<div class="row"><label>${l}</label><input data-pk="${k}" value="${esc(P[k] || '')}"></div>`; }).join('')}
+      <div class="row"><label>Logo du cartouche</label>${P.logo ? `<img src="${P.logo}" style="max-width:100%;max-height:70px;object-fit:contain;border:1px solid #e3e7ee;border-radius:6px;padding:4px;background:#fff">` : '<span class="hint">Aucun logo</span>'}<div class="btns"><button class="btn" id="logoSet">${P.logo ? 'Changer le logo…' : 'Ajouter un logo…'}</button>${P.logo ? '<button class="btn dng" id="logoDel">Retirer</button>' : ''}</div></div>
       <div class="row"><label>Folio actif</label><input id="shName" value="${esc(App.sheets[App.sheet].name)}"></div>
       <div class="btns"><button class="btn dng" id="shDel">Supprimer ce folio</button></div>
       <div class="row chk"><input type="checkbox" id="oFrame" ${App.opts.frame ? 'checked' : ''}><label>Cadre et cartouche</label></div>
@@ -2518,6 +2646,7 @@ const Props = {
     el.querySelectorAll('[data-pk]').forEach(i => i.onchange = () => { P[i.dataset.pk] = i.value; App.changed(); });
     $('#shName').onchange = e => { App.sheets[App.sheet].name = e.target.value; Sheets.render(); App.changed(); };
     $('#shDel').onclick = () => Sheets.remove(App.sheet);
+    $('#logoSet').onclick = () => $('#logoIn').click(); const ld = $('#logoDel'); if (ld) ld.onclick = () => { delete P.logo; App.changed(); };
     $('#oFrame').onchange = e => { App.opts.frame = e.target.checked; App.changed(); View.fit(); };
     $('#oNums').onchange = e => { App.opts.wireNums = e.target.checked; App.changed(); };
     $('#oXref').onchange = e => { App.opts.xref = e.target.checked; App.changed(); };
@@ -2706,6 +2835,24 @@ const Files = {
   },
   exportPNG() { const url = this.sheetImage(App.sheet, 2); if (NATIVE) NATIVE.saveDataURL(this.fname().replace(/\.sxp$/, '_F' + (App.sheet + 1) + '.png'), url); else { const a = document.createElement('a'); a.href = url; a.download = this.fname().replace(/\.sxp$/, '_F' + (App.sheet + 1) + '.png'); a.click(); } }
 };
+// logo du cartouche : réduit à 400 px maximum pour garder des fichiers projet légers
+$('#logoIn').onchange = e => {
+  const f = e.target.files[0]; if (!f) return; const r = new FileReader();
+  r.onload = () => { const im = new Image(); im.onload = () => { const k = Math.min(1, 400 / Math.max(im.width, im.height)), c = document.createElement('canvas'); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); App.project.logo = c.toDataURL('image/png'); App.changed(); toast('Logo ajouté au cartouche'); }; im.src = r.result; };
+  r.readAsDataURL(f); e.target.value = '';
+};
+// panneaux redimensionnables (bibliothèque et propriétés)
+(function () {
+  const m = $('#main'), load = k => { try { return +localStorage.getItem(k); } catch (e) { return 0; } }, save = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { } };
+  const pw = load('simulix.palW'), qw = load('simulix.propW'); if (pw) m.style.setProperty('--palW', pw + 'px'); if (qw) m.style.setProperty('--propW', qw + 'px');
+  [['#splitL', '--palW', 'simulix.palW', 1], ['#splitR', '--propW', 'simulix.propW', -1]].forEach(([sel, v, key, dir]) => {
+    const sp = $(sel); let st0 = null;
+    sp.addEventListener('pointerdown', e => { sp.setPointerCapture(e.pointerId); sp.classList.add('on'); const cur = parseFloat(getComputedStyle(m).getPropertyValue(v)) || (dir > 0 ? 232 : 270); st0 = { x: e.clientX, w: cur }; });
+    sp.addEventListener('pointermove', e => { if (!st0) return; const w = clamp(st0.w + (e.clientX - st0.x) * dir, 150, 560); m.style.setProperty(v, w + 'px'); });
+    sp.addEventListener('pointerup', () => { if (!st0) return; sp.classList.remove('on'); save(key, parseFloat(m.style.getPropertyValue(v))); st0 = null; });
+    sp.addEventListener('dblclick', () => { m.style.removeProperty(v); save(key, 0); });
+  });
+})();
 $('#fileIn').onchange = e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => { $('#modal').classList.remove('open'); Files.loadText(r.result); }; r.readAsText(f); e.target.value = ''; };
 
 /* ===================== OUTILS D'INGÉNIERIE ===================== */
@@ -3038,6 +3185,8 @@ function help() {
   <li>📈 Traceur : ajoutez des vérins, manomètres, débitmètres, bobines… pour suivre leurs courbes dans le temps.</li></ul>
   <h4>Automate</h4><ul><li>Double-cliquez sur l'automate : éditeur Ladder, GRAFCET, mnémoniques, table des variables avec forçage, liaison matérielle Arduino / Modbus TCP.</li></ul>
   <h4>Dépannage</h4><ul><li>Le formateur introduit des défaillances (fil coupé, contact collé, bobine coupée, tiroir bloqué, vérin grippé…), puis active 🛠 Dépannage et enregistre le projet. L'apprenant mesure (voltmètre, manomètre, traceur) et signale les composants défectueux.</li></ul>
+  <h4>Code source</h4><p>Simulix Pro est un logiciel libre (licence GPL-3.0) : <a href="https://github.com/Pepinou66/simulix-pro" target="_blank" rel="noopener">github.com/Pepinou66/simulix-pro</a></p>
+  <h4>Ergonomie</h4><p>Clic droit sur un composant, une liaison ou le fond du schéma : modifier, renommer, régler, défaillance, position du repère, ajouter un composant, coller, supprimer. Faites glisser les bords de la bibliothèque et du panneau de propriétés pour les redimensionner (double-clic : taille par défaut).</p>
   <h4>Mises à jour</h4><p>Menu Aide → Rechercher des mises à jour : choix du mode (me demander, automatique à l'ouverture, à la fermeture, au démarrage de Windows). <button class="btn" onclick="Updates.open()">Ouvrir les réglages de mise à jour</button></p>
   <h4>Raccourcis</h4><p>Suppr : supprimer · R : pivoter · Ctrl+Z / Ctrl+Y : annuler / rétablir · Ctrl+C / Ctrl+V / Ctrl+D : copier / coller / dupliquer · Ctrl+A : tout sélectionner · Ctrl+S : enregistrer · F5 : simuler / arrêter · Molette : zoom · Clic droit ou clic molette glissé : déplacer la vue.</p>
   </div>`;

@@ -449,33 +449,71 @@ def('exhaust', { name: 'Échappement / silencieux', cat: 'Pneumatique', w: 40, h
   draw(ctx) { ctx.strokeStyle = INK; ctx.lineWidth = 1.6; D.line(ctx, [20, 0, 20, 14]); D.tri(ctx, 20, 22, 8, 'd', '#fff'); } });
 // Débit pompe : Q (L/min) = Cyl (cm³/tr) × N (tr/min) / 1000 × ηv  —  Puissance : P (kW) = Q × p / 600   (fiches F03A, F05A)
 function pumpQ(c) { const p = c.props; if (p.disp) return (+p.disp) * (+p.n || 1450) / 1000 * ((+p.etav || 100) / 100); return +p.q || 20; }
+// Pilotage à distance d'un limiteur (orifice X) : X à la bâche → mise à vide ; X vers un petit limiteur → second tarage
+function remoteCap(c, S) {
+  if (!c.props.rpilot) return null;
+  const i = S.info(c, 'X'); if (i.vent) return 5;
+  const r = S.root(c, 'X'); let cap = null;
+  for (const o of App.comps) if (o !== c && o.type === 'relief' && S.root(o, 'P') === r && S.vent(o, 'T')) cap = Math.min(cap ?? 1e9, +o.props.set || 100);
+  return cap;
+}
+const xcapUpdate = (c, S) => { const v = remoteCap(c, S); if (st(c).xcap !== v) { st(c).xcap = v; return true; } return false; };
+const PTYPES = { fixe: 'Cylindrée fixe', variable: 'Cylindrée variable (réglage manuel)', regp: 'Cylindrée variable pilotée — régulée en pression', ls: 'Cylindrée variable pilotée — load-sensing' };
 def('pump', {
-  name: 'Groupe hydraulique', cat: 'Hydraulique', w: 120, h: 100, ports: [P('P', 40, 0, 'h'), P('T', 100, 0, 'h')],
-  defProps: { tag: '0P1', disp: 16, n: 1450, etav: 95, pmax: 120, plage: 5 },
-  fields: [TAGF, { k: 'disp', label: 'Cylindrée pompe (cm³/tr)', type: 'num', step: 0.5 }, { k: 'n', label: 'Régime d\'entraînement (tr/min)', type: 'num' }, { k: 'etav', label: 'Rendement volumétrique (%)', type: 'num' },
-    { k: 'pmax', label: 'Tarage du limiteur = pression d\'ouverture (bar)', type: 'num' }, { k: 'plage', label: 'Plage d\'ouverture du limiteur (% à plein débit)', type: 'num' }, REFF],
-  catalog: [{ ref: 'Pompe à engrenages 8 cm³/tr — 1450 tr/min', props: { disp: 8, n: 1450, pmax: 160 } }, { ref: 'Pompe à engrenages 16 cm³/tr — 1450 tr/min', props: { disp: 16, n: 1450, pmax: 180 } }, { ref: 'Pompe à engrenages 25 cm³/tr — 1450 tr/min', props: { disp: 25, n: 1450, pmax: 200 } },
-    { ref: 'Pompe à engrenages internes 32 cm³/tr — 1450 tr/min', props: { disp: 32, n: 1450, pmax: 250 } }, { ref: 'Pompe à palettes 40 cm³/tr — 1450 tr/min', props: { disp: 40, n: 1450, pmax: 140 } }, { ref: 'Pompe à pistons axiaux 45 cm³/tr — 1800 tr/min', props: { disp: 45, n: 1800, pmax: 280 } }],
-  faults: [['low', 'Pompe usée (fuites internes : débit réduit)'], ['cav', 'Cavitation : aspiration obstruée / prise d\'air'], ['relief', 'Limiteur de pression déréglé (taré trop bas)'], ['reliefOpen', 'Limiteur de pression bloqué ouvert (clapet pollué)']],
-  bom: 'Centrale hydraulique (pompe, moteur, limiteur, réservoir)',
-  srcVal(c) { let q = pumpQ(c), p = +c.props.pmax || 120; if (c.fault === 'low') { q *= 0.55; } if (c.fault === 'cav') q *= 0.5; if (c.fault === 'relief') p *= 0.3; if (c.fault === 'reliefOpen') p = 4; return { q, p, plage: (+c.props.plage || 0) / 100 }; },
-  sources(c) { const v = this.srcVal(c); return [['P', 'hyd', v.p, v.q, v.plage], ['T', 'tank']]; },
+  name: 'Groupe hydraulique', cat: 'Hydraulique', w: 120, h: 100,
+  portsFn(c) { const o = [P('P', 40, 0, 'h', 'P'), P('T', 100, 0, 'h', 'T')]; if (c.props.rpilot) o.push(P('X', 120, 60, 'h', 'X (pilotage du limiteur)')); return o; },
+  defProps: { tag: '0P1', ptype: 'fixe', disp: 16, n: 1450, etav: 95, cmd: 100, pc: 100, dls: 20, pmax: 120, plage: 5, rpilot: false },
+  fieldsFn: c => [TAGF, { k: 'ptype', label: 'Type de pompe', type: 'sel', opts: Object.keys(PTYPES), labels: Object.values(PTYPES) },
+    { k: 'disp', label: c.props.ptype === 'fixe' ? 'Cylindrée (cm³/tr)' : 'Cylindrée maxi (cm³/tr)', type: 'num', step: 0.5 }, { k: 'n', label: 'Régime d\'entraînement (tr/min)', type: 'num' }, { k: 'etav', label: 'Rendement volumétrique (%)', type: 'num' },
+    ...(c.props.ptype === 'variable' ? [{ k: 'cmd', label: 'Cylindrée réglée (% du maxi)', type: 'range' }] : []),
+    ...(c.props.ptype === 'regp' ? [{ k: 'pc', label: 'Consigne du régulateur de pression (bar)', type: 'num' }] : []),
+    ...(c.props.ptype === 'ls' ? [{ k: 'dls', label: 'Δp de stand-by load-sensing (bar)', type: 'num' }] : []),
+    { k: 'pmax', label: 'Tarage du limiteur de pression (bar)', type: 'num' }, { k: 'plage', label: 'Plage d\'ouverture du limiteur (% à plein débit)', type: 'num' },
+    { k: 'rpilot', label: 'Limiteur piloté (orifice X de pilotage à distance / mise à vide)', type: 'chk' }, REFF],
+  catalog: [{ ref: 'Pompe à engrenages 8 cm³/tr — 1450 tr/min', props: { ptype: 'fixe', disp: 8, n: 1450, pmax: 160 } }, { ref: 'Pompe à engrenages 16 cm³/tr — 1450 tr/min', props: { ptype: 'fixe', disp: 16, n: 1450, pmax: 180 } }, { ref: 'Pompe à engrenages 25 cm³/tr — 1450 tr/min', props: { ptype: 'fixe', disp: 25, n: 1450, pmax: 200 } },
+    { ref: 'Pompe à engrenages internes 32 cm³/tr — 1450 tr/min', props: { ptype: 'fixe', disp: 32, n: 1450, pmax: 250 } }, { ref: 'Pompe à palettes à cylindrée variable 40 cm³/tr', props: { ptype: 'regp', disp: 40, n: 1450, pc: 100, pmax: 140 } },
+    { ref: 'Pompe à pistons axiaux 45 cm³/tr régulée en pression', props: { ptype: 'regp', disp: 45, n: 1800, pc: 210, pmax: 250 } }, { ref: 'Pompe à pistons axiaux 45 cm³/tr load-sensing', props: { ptype: 'ls', disp: 45, n: 1800, dls: 20, pmax: 280 } }],
+  faults: [['low', 'Pompe usée (fuites internes : débit réduit)'], ['cav', 'Cavitation : aspiration obstruée / prise d\'air'], ['relief', 'Limiteur de pression déréglé (taré trop bas)'], ['reliefOpen', 'Limiteur de pression bloqué ouvert (clapet pollué)'], ['reg', 'Régulateur de la pompe bloqué en grande cylindrée']],
+  bom: c => 'Centrale hydraulique — pompe ' + PTYPES[c.props.ptype || 'fixe'].toLowerCase() + ' ' + c.props.disp + ' cm³/tr, limiteur ' + (c.props.rpilot ? 'piloté' : 'à action directe'),
+  srcVal(c) {
+    let q = pumpQ(c) * (c.props.ptype === 'variable' ? clamp(+c.props.cmd || 0, 0, 100) / 100 : 1), p = +c.props.pmax || 120;
+    if (c.fault === 'low') q *= 0.55; if (c.fault === 'cav') q *= 0.5; if (c.fault === 'relief') p *= 0.3; if (c.fault === 'reliefOpen') p = 4;
+    const x = st(c).xcap; if (x != null) p = Math.min(p, x);
+    const reg = c.fault === 'reg' ? null : c.props.ptype === 'regp' ? Math.min(+c.props.pc || 100, p) : null, ls = c.fault === 'reg' ? null : c.props.ptype === 'ls' ? (+c.props.dls || 20) : null;
+    return { q, p, plage: (+c.props.plage || 0) / 100, reg, ls };
+  },
+  update: xcapUpdate,
+  sources(c) { const v = this.srcVal(c); return [['P', 'hyd', v.p, v.q, v.plage, { reg: v.reg, ls: v.ls }], ['T', 'tank']]; },
+  press(c, x, y) {
+    if (x > 56 && x < 98 && y > 22 && y < 64) { ask('Tarage du limiteur de pression (bar)', String(c.props.pmax)).then(v => { if (v != null && +v > 0) { c.props.pmax = +v; App.changed(); toast('Limiteur taré à ' + (+v) + ' bar'); } }); return true; }
+    if (c.props.ptype === 'variable' && x < 56) { c.props.cmd = ((+c.props.cmd || 0) >= 100 ? 25 : (+c.props.cmd || 0) + 25); Props.render(); return true; }
+  },
+  hint: (c, x, y) => (x > 56 && x < 98 && y > 22 && y < 64) ? 'Cliquer : modifier le tarage du limiteur (' + c.props.pmax + ' bar)' : c.props.ptype === 'variable' && x < 56 ? 'Cliquer : régler la cylindrée (' + c.props.cmd + ' %)' : PTYPES[c.props.ptype || 'fixe'],
   draw(ctx, c, S) {
-    ctx.strokeStyle = INK; ctx.lineWidth = 1.6;
+    const t = c.props.ptype || 'fixe'; ctx.strokeStyle = INK; ctx.lineWidth = 1.6;
     D.line(ctx, [40, 0, 40, 38]); D.circle(ctx, 40, 52, 14, '#fff'); D.tri(ctx, 40, 42, 5, 'u', INK);
     D.line(ctx, [40, 66, 40, 84]); D.line(ctx, [26, 52, 12, 52]);
-    D.line(ctx, [8, 44, 8, 60]); D.text(ctx, 'M', 4, 36, 9, INK, 'center', true);
+    D.line(ctx, [8, 44, 8, 60]); D.text(ctx, 'M', 4, 70, 9, INK, 'center', true);
+    if (t !== 'fixe') D.arrow(ctx, 26, 68, 56, 36, 5); // cylindrée variable
+    if (t === 'regp' || t === 'ls') { // pilotage du plateau
+      D.dash(ctx, 1); D.line(ctx, [40, 26, 16, 26, 16, 32]); D.dash(ctx, 0); D.rect(ctx, 10, 32, 12, 9, '#fff'); D.arrow(ctx, 22, 37, 28, 42, 3);
+      D.text(ctx, t === 'ls' ? 'LS' : 'p', 14, 20, 8, '#475569', 'center', true);
+    }
+    if (t === 'variable') D.text(ctx, (c.props.cmd | 0) + '%', 36, 78, 8, '#1d4ed8', 'right', true);
     const lam = S && S.lam.get(S.root(c, 'P')) > 0.05;
-    D.line(ctx, [40, 20, 72, 20, 72, 30]); D.rect(ctx, 64, 30, 16, 26, lam ? '#fecaca' : '#fff'); D.arrow(ctx, 72, 52, 72, 34, 4); D.spring(ctx, 80, 43, 92, 4);
-    D.dash(ctx, 1); D.line(ctx, [60, 20, 60, 50, 64, 50]); D.dash(ctx, 0);
+    // limiteur de pression : normalement fermé, pilotage amont contre le ressort, flèche vers le réservoir
+    D.line(ctx, [40, 20, 72, 20, 72, 30]); D.rect(ctx, 64, 30, 16, 26, lam ? '#fecaca' : '#fff'); D.arrow(ctx, 70, 34, 70, 52, 4); D.spring(ctx, 80, 43, 92, 4); D.line(ctx, [88, 36, 94, 50]);
+    D.dash(ctx, 1); D.line(ctx, [60, 20, 60, 36, 64, 36]); D.dash(ctx, 0);
+    if (c.props.rpilot) { ctx.strokeStyle = '#7c3aed'; D.dash(ctx, 1); D.line(ctx, [92, 43, 108, 43, 108, 60, 120, 60]); D.dash(ctx, 0); D.text(ctx, 'X', 114, 54, 8, '#7c3aed', 'center', true); ctx.strokeStyle = INK; }
     D.line(ctx, [72, 56, 72, 84]); D.line(ctx, [100, 0, 100, 84]);
     ctx.beginPath(); ctx.moveTo(30, 80); ctx.lineTo(30, 96); ctx.lineTo(112, 96); ctx.lineTo(112, 80); ctx.stroke();
-    D.text(ctx, 'P', 46, 8, 8, '#64748b'); D.text(ctx, 'T', 106, 8, 8, '#64748b');
-    if (lam && (Date.now() / 200 | 0) % 2) D.text(ctx, '≈', 88, 62, 12, '#dc2626', 'center', true);
+    D.text(ctx, 'P', 46, 8, 8, '#64748b'); D.text(ctx, 'T', 106, 8, 8, '#64748b'); D.text(ctx, (st(c).xcap != null ? st(c).xcap : c.props.pmax) + ' bar', 87, 64, 6, '#64748b');
+    if (lam && (Date.now() / 200 | 0) % 2) D.text(ctx, '≈', 88, 72, 12, '#dc2626', 'center', true);
   },
   probe(c, S) {
-    const v = this.srcVal(c), o = { 'Débit (Cyl × N / 1000 × ηv)': fmt(v.q, 1) + ' L/min', 'Pression d\'ouverture limiteur': fmt(v.p, 0) + ' bar', 'Pression à plein débit': fmt(v.p * (1 + v.plage), 0) + ' bar' };
-    if (S) { const r = S.root(c, 'P'), p = S.P(c, 'P'); o['Pression refoulement (M1)'] = fmt(p, 1) + ' bar'; o['Puissance hydraulique Q×p/600'] = fmt(v.q * p / 600, 2) + ' kW'; const lam = S.lam.get(r) || 0; o['Laminage au limiteur'] = lam > 0.05 ? fmt(lam, 2) + ' kW → échauffement de l\'huile' : 'non'; o['Température huile'] = fmt(S.oilT, 1) + ' °C'; o['Viscosité estimée (ISO VG 46)'] = fmt(S.visc, 1) + ' cSt' + (S.visc < 15 ? ' (trop faible)' : ''); }
+    const v = this.srcVal(c), o = { 'Type': PTYPES[c.props.ptype || 'fixe'], 'Débit maxi (Cyl × N / 1000 × ηv)': fmt(v.q, 1) + ' L/min', 'Tarage limiteur': fmt(v.p, 0) + ' bar' + (st(c).xcap != null ? ' (piloté par X)' : ''), 'Pression à plein débit': fmt(v.p * (1 + v.plage), 0) + ' bar' };
+    if (v.reg != null) o['Consigne régulateur'] = v.reg + ' bar (la pompe réduit son débit, pas de laminage)'; if (v.ls != null) o['Stand-by LS'] = v.ls + ' bar au-dessus de la charge';
+    if (S) { const r = S.root(c, 'P'), p = S.P(c, 'P'); o['Pression refoulement (M1)'] = fmt(p, 1) + ' bar'; o['Débit refoulé'] = fmt(S.flow.get(r) || 0, 1) + ' L/min'; o['Puissance hydraulique Q×p/600'] = fmt((S.flow.get(r) || 0) * p / 600 + (S.lam.get(r) || 0), 2) + ' kW'; const lam = S.lam.get(r) || 0; o['Laminage au limiteur'] = lam > 0.05 ? fmt(lam, 2) + ' kW → échauffement de l\'huile' : 'non'; o['Température huile'] = fmt(S.oilT, 1) + ' °C'; o['Viscosité estimée (ISO VG 46)'] = fmt(S.visc, 1) + ' cSt' + (S.visc < 15 ? ' (trop faible)' : ''); }
     return o;
   },
   plot: (c, S) => S ? S.P(c, 'P') : 0, plotUnit: 'bar'
@@ -791,15 +829,20 @@ def('filter', {
 });
 def('relief', {
   name: 'Limiteur de pression (LP / anti-choc)', cat: 'Appareils de pression', w: 60, h: 80, ports: [P('P', 30, 80, 'h', 'P'), P('T', 30, 0, 'h', 'T')],
-  defProps: { tag: '1V4', set: 100, vtag: '' }, fields: [TAGF, { k: 'set', label: 'Tarage — pression d\'ouverture (bar)', type: 'num' }, { k: 'vtag', label: 'Mise à vide électrique : repère électro-aimant (vide = sans)', type: 'text' }, REFF],
+  portsFn(c) { const o = [P('P', 30, 80, 'h', 'P'), P('T', 30, 0, 'h', 'T')]; if (c.props.rpilot) o.push(P('X', 60, 40, 'h', 'X (pilotage à distance)')); return o; },
+  defProps: { tag: '1V4', set: 100, vtag: '', rpilot: false }, fields: [TAGF, { k: 'set', label: 'Tarage — pression d\'ouverture (bar)', type: 'num' }, { k: 'rpilot', label: 'Action pilotée avec orifice X (pilotage à distance / mise à vide)', type: 'chk' }, { k: 'vtag', label: 'Mise à vide électrique : repère électro-aimant (vide = sans)', type: 'text' }, REFF],
+  update: xcapUpdate,
+  press(c) { ask('Tarage du limiteur ' + (c.props.tag || '') + ' (bar)', String(c.props.set)).then(v => { if (v != null && +v > 0) { c.props.set = +v; App.changed(); toast('Tarage : ' + (+v) + ' bar'); } }); return true; },
+  hint: c => 'Cliquer : modifier le tarage (' + c.props.set + ' bar)',
   faults: [['open', 'Clapet bloqué ouvert (pollution sur le siège)'], ['stuck', 'Clapet grippé fermé : plus de protection'], ['low', 'Ressort affaibli : tarage trop bas']],
   bom: 'Limiteur de pression à action directe',
-  cap(c, uf, m) { if (c.fault === 'stuck') return null; const t = m.get(uf.find(K(c, 'T'))); if (!t || !t.vent) return null; let v = +c.props.set || 100; if (c.props.vtag && !(Sim.S && Sim.S.tags[c.props.vtag])) v = 2; if (c.fault === 'open') v = 3; if (c.fault === 'low') v *= 0.4; return ['P', v]; },
+  cap(c, uf, m) { if (c.fault === 'stuck') return null; const t = m.get(uf.find(K(c, 'T'))); if (!t || !t.vent) return null; let v = +c.props.set || 100; if (c.props.vtag && !(Sim.S && Sim.S.tags[c.props.vtag])) v = 2; if (c.fault === 'open') v = 3; if (c.fault === 'low') v *= 0.4; if (st(c).xcap != null) v = Math.min(v, st(c).xcap); return ['P', v]; },
   draw(ctx, c, S) {
     const open = S && S.P(c, 'P') >= (+c.props.set || 100) * 0.98 && S.vent(c, 'T');
     ctx.strokeStyle = INK; ctx.lineWidth = 1.6; D.line(ctx, [30, 80, 30, 60]); D.line(ctx, [30, 20, 30, 0]);
     ctx.save(); ctx.translate(0, 0); drawPV(ctx, true, c.props.set, open); ctx.restore();
     D.dash(ctx, 1); D.line(ctx, [30, 70, 6, 70, 6, 56, 14, 56]); D.dash(ctx, 0); D.tri(ctx, 11, 56, 3, 'r', INK);
+    if (c.props.rpilot) { ctx.strokeStyle = '#7c3aed'; D.dash(ctx, 1); D.line(ctx, [52, 32, 60, 32, 60, 40]); D.dash(ctx, 0); D.text(ctx, 'X', 54, 46, 8, '#7c3aed', 'center', true); }
   },
   probe: (c, S) => ({ 'Pression amont': S ? fmt(S.P(c, 'P'), 1) + ' bar' : '—', 'État': S && S.P(c, 'P') >= (+c.props.set || 100) * 0.98 ? 'OUVERT (laminage)' : 'fermé' })
 });
@@ -1065,7 +1108,7 @@ const PALETTE = [
     ['valve', 'Distributeur 5/3 centre fermé', { vt: 'v53', aL: 'sol', aR: 'sol', tL: 'Y1', tR: 'Y2' }],
     ['motorf', 'Moteur pneumatique', { medium: 'pneu', tag: 'M1' }]]],
   ['Hydraulique', [
-    ['pump'], ['tank'],
+    ['pump'], ['pump', 'Groupe — pompe à cylindrée variable', { ptype: 'variable' }], ['pump', 'Groupe — pompe régulée en pression', { ptype: 'regp', disp: 40, pc: 100, pmax: 140 }], ['pump', 'Groupe — pompe load-sensing', { ptype: 'ls', disp: 45, n: 1800, pmax: 250 }], ['pump', 'Groupe — limiteur piloté (X)', { rpilot: true }], ['tank'],
     ['cyl', 'Vérin double effet', { medium: 'hyd', bore: 63, rod: 36, stroke: 300, load: 10000 }],
     ['cyl', 'Vérin simple effet', { medium: 'hyd', single: true, bore: 50, rod: 36, stroke: 200 }],
     ['valve', 'Distributeur 4/3 levier tandem', { vt: 'v43t', medium: 'hyd', aL: 'lever', aR: 'lever', tag: '1V1' }],
@@ -1078,7 +1121,7 @@ const PALETTE = [
     ['valve', 'Distributeur 4/3 centre ouvert H', { vt: 'v43o', medium: 'hyd', aL: 'sol', aR: 'sol', tL: 'Y1', tR: 'Y2' }],
     ['valve', 'Distributeur 4/3 centre Y (A et B→T)', { vt: 'v43f', medium: 'hyd', aL: 'sol', aR: 'sol', tL: 'Y1', tR: 'Y2' }],
     ['motorf', 'Moteur hydraulique', { medium: 'hyd' }], ['pumpvar']]],
-  ['Appareils de pression', [['relief'], ['relief', 'Limiteur avec mise à vide électrique', { vtag: 'Y0', tag: '0V1' }], ['reducer'], ['seqv'], ['cbv']]],
+  ['Appareils de pression', [['relief'], ['relief', 'Limiteur à action pilotée (orifice X)', { rpilot: true, set: 160, tag: '0V1' }], ['relief', 'Limiteur avec mise à vide électrique', { vtag: 'Y0', tag: '0V1' }], ['reducer'], ['seqv'], ['cbv']]],
   ['Appareils fluidiques', [['filter'], ['throttle'], ['throttle', 'Limiteur bidirectionnel', { check: false }], ['check'], ['shuttle'], ['twopress'], ['pswitch']]],
   ['Électrique — commande', [['supply'], ['pb_no'], ['pb_nc'], ['sw_no'], ['estop'], ['coil'], ['k_no'], ['k_nc'], ['coil_t'], ['ls_no'], ['ls_nc'], ['prox'], ['sol'], ['lamp'], ['motor'], ['buzzer']]],
   ['Électrique — puissance', [['mains3'], ['mains3', 'Réseau triphasé 380 V', { U: '380' }], ['mains1'], ['transfo'], ['psu'], ['breaker'], ['breaker', 'Disjoncteur 1P+N', { poles: 2, In: 10 }], ['rcd'], ['rcd', 'Différentiel 4P 30 mA', { poles: 4 }], ['fuse'], ['kmp'], ['rth'], ['motor3'], ['motor', 'Moteur monophasé 230 V', { vnom: '230', power: 750, tag: 'M2' }], ['lamp', 'Voyant 230 V', { vnom: '230', power: 5 }], ['coil', 'Bobine de contacteur 230 V', { vnom: '230', tag: 'KM1', power: 8 }], ['coil', 'Bobine de contacteur 24 V', { tag: 'KM1', power: 5 }]]],
