@@ -836,7 +836,7 @@ def('hpump', {
     let q = (+c.props.disp || 16) * nr / 1000 * ((+c.props.etav || 95) / 100) * (t === 'variable' ? clamp(+c.props.cmd || 0, 0, 100) / 100 : 1);
     if (c.fault === 'low') q *= 0.55; if (c.fault === 'cav') q *= 0.5; if (s.dry) q = 0;
     const reg = c.fault === 'reg' ? null : t === 'regp' ? (+c.props.pc || 160) : null, ls = c.fault === 'reg' ? null : t === 'ls' ? (+c.props.dls || 20) : null;
-    let p = +c.props.padm || 250; if (t === 'ls' && c.fault !== 'reg') p = Math.min(p, +c.props.pc || p);
+    let p = Math.max((+c.props.padm || 250) * 1.6, ...App.comps.filter(o => o.type === 'relief').map(o => (+o.props.set || 100) + 5)); if (t === 'ls' && c.fault !== 'reg') p = Math.min(p, +c.props.pc || p); // sans limiteur la pression monte au-delà de l'admissible (casse)
     return { q, p, reg, ls, nr };
   },
   update(c, S) { const dry = !S.vent(c, 'S'); if (st(c).dry !== dry) { st(c).dry = dry; return true; } return false; },
@@ -845,8 +845,8 @@ def('hpump', {
     const s = st(c), v = this.srcVal(c); if (s.dry && v.nr > 0 && !s.warnDry) { s.warnDry = 1; S.stickyBanner = S.banner = '⚠ Pompe ' + c.props.tag + ' : aspiration S non reliée au réservoir — la pompe tourne à sec (cavitation, destruction)'; }
     if (!s.dry) s.warnDry = 0;
     const p = S.P(c, 'P'), lim = +c.props.padm || 250;
-    if (v.q > 0.01 && v.reg == null && p >= lim * 0.97 && !s.warnP) { s.warnP = 1; S.stickyBanner = S.banner = '💥 Pompe ' + c.props.tag + ' : ' + Math.round(p) + ' bar ≥ pression maxi admissible ' + lim + ' bar — aucun limiteur de pression ne protège le refoulement (casse pompe / flexibles)' + ((r => r ? ' : le limiteur ' + r.props.tag + ' est monté en série, son orifice T doit aller au réservoir' : '')(App.comps.find(o => o.type === 'relief' && st(o).ser))); }
-    if (p < lim * 0.9) s.warnP = 0;
+    if (v.q > 0.01 && p > lim * 1.01 && !s.warnP) { s.warnP = 1; const rl = App.comps.find(o => o.type === 'relief' && S.root(o, 'P') === S.root(c, 'P') && S.vent(o, 'T')); S.stickyBanner = S.banner = rl ? '💥 Pompe ' + c.props.tag + ' : ' + Math.round(p) + ' bar > pression maxi admissible ' + lim + ' bar — le limiteur ' + rl.props.tag + ' est taré à ' + rl.props.set + ' bar, trop haut pour la pompe : régler le tarage sous ' + lim + ' bar' : '💥 Pompe ' + c.props.tag + ' : ' + Math.round(p) + ' bar > pression maxi admissible ' + lim + ' bar — aucun limiteur de pression ne protège le refoulement (casse pompe / flexibles)' + ((r => r ? ' : le limiteur ' + r.props.tag + ' est monté en série, son orifice T doit aller au réservoir' : '')(App.comps.find(o => o.type === 'relief' && st(o).ser))); }
+    if (p < lim && s.warnP) { s.warnP = 0; if ((S.stickyBanner || '').startsWith('💥 Pompe ' + c.props.tag + ' ')) S.stickyBanner = ''; }
   },
   press(c) { if (c.props.ptype === 'variable') { c.props.cmd = ((+c.props.cmd || 0) >= 100 ? 0 : (+c.props.cmd || 0) + 25); Props.render(); return true; } },
   hint: c => c.props.ptype === 'variable' ? 'Cliquer : régler la cylindrée (' + c.props.cmd + ' %)' : 'Pompe ' + PTECH[c.props.tech || 'engr'] + ' — ' + PTYPES[c.props.ptype || 'fixe'],
@@ -1200,16 +1200,22 @@ def('filter', {
 const motRunning = tag => { const m = App.comps.find(o => o.props.tag === tag && (o.type === 'motor3' || o.type === 'motor')); if (!m) return null; const s = st(m); return m.type === 'motor3' ? Math.abs(s.n || 0) > 700 : !!s.on; };
 def('cooler', {
   name: 'Radiateur / refroidisseur', cat: 'Appareils fluidiques', w: 80, h: 80, ports: [P('1', 40, 80, 'f', 'entrée'), P('2', 40, 0, 'f', 'sortie')],
-  defProps: { tag: '0E1', medium: 'hyd', cool: 'fan', kw: 3, mot: '', bypass: true },
+  defProps: { tag: '0E1', medium: 'hyd', cool: 'fan', kw: 3, mot: '', bypass: true, pmax: 16 },
   fieldsFn: c => [TAGF, { k: 'medium', label: 'Fluide', type: 'sel', opts: ['hyd', 'pneu'], labels: ['Huile hydraulique (refroidisseur d\'huile)', 'Air comprimé (refroidisseur final / aftercooler)'] },
     { k: 'cool', label: 'Refroidissement', type: 'sel', opts: ['air', 'fan', 'eau'], labels: ['Air — convection naturelle', 'Air — ventilateur électrique', 'Eau (échangeur à plaques / tubulaire)'] },
     { k: 'kw', label: 'Puissance dissipée nominale (kW à ΔT 30 °C)', type: 'num', step: 0.5 },
+    { k: 'pmax', label: 'Pression maxi admissible (bar) — au-delà le faisceau éclate', type: 'num', step: 1 },
     ...(c.props.cool === 'fan' ? [{ k: 'mot', label: 'Moteur du ventilateur (repère, vide = toujours en marche)', type: 'text' }] : []),
     ...(c.props.medium !== 'pneu' ? [{ k: 'bypass', label: 'Clapet by-pass de protection (taré ≈ 2 bar)', type: 'chk' }] : []), REFF],
-  catalog: [{ ref: 'Refroidisseur huile/air 1,5 kW 24 V DC', props: { medium: 'hyd', cool: 'fan', kw: 1.5 } }, { ref: 'Refroidisseur huile/air 5 kW 400 V', props: { medium: 'hyd', cool: 'fan', kw: 5 } }, { ref: 'Échangeur huile/eau à plaques 15 kW', props: { medium: 'hyd', cool: 'eau', kw: 15 } }, { ref: 'Refroidisseur final d\'air comprimé air/air', props: { medium: 'pneu', cool: 'fan', kw: 4 } }],
+  catalog: [{ ref: 'Refroidisseur huile/air 1,5 kW 24 V DC — 16 bar', props: { medium: 'hyd', cool: 'fan', kw: 1.5, pmax: 16 } }, { ref: 'Refroidisseur huile/air 5 kW 400 V — 26 bar', props: { medium: 'hyd', cool: 'fan', kw: 5, pmax: 26 } }, { ref: 'Échangeur huile/eau à plaques 15 kW — 30 bar', props: { medium: 'hyd', cool: 'eau', kw: 15, pmax: 30 } }, { ref: 'Refroidisseur final d\'air comprimé air/air', props: { medium: 'pneu', cool: 'fan', kw: 4 } }],
   faults: [['clog', 'Faisceau encrassé (ailettes bouchées) : refroidissement réduit'], ['fan', 'Ventilateur / circulation d\'eau en panne'], ['block', 'Circuit interne bouché (perte de charge)']],
   bom: c => (c.props.medium === 'pneu' ? 'Refroidisseur final d\'air comprimé ' : 'Refroidisseur d\'huile ') + (c.props.cool === 'eau' ? 'huile/eau ' : 'à air ') + c.props.kw + ' kW' + (c.props.cool === 'fan' ? ' avec ventilateur' : ''),
-  links(c) { return c.fault === 'block' ? (c.props.medium !== 'pneu' && c.props.bypass ? [['1', '2', 0.9]] : [['1', '2', 0.25]]) : [['1', '2']]; },
+  step(c, S) { // surpression : le faisceau éclate (fuite d'huile / d'air)
+    const s = st(c), p = Math.max(S.P(c, '1'), S.P(c, '2')), lim = +c.props.pmax || 16;
+    if (!s.burst && p > lim * 1.05) { s.burst = true; S.stickyBanner = S.banner = '💥 Radiateur ' + c.props.tag + ' : ' + Math.round(p) + ' bar > pression maxi admissible ' + lim + ' bar — faisceau éclaté' + (c.props.medium === 'pneu' ? '' : ' : le monter sur le retour basse pression (après le limiteur / le distributeur), jamais sur la ligne HP'); }
+  },
+  sources(c) { return st(c).burst ? [['1', 'vent'], ['2', 'vent']] : []; },
+  links(c) { if (st(c).burst) return []; return c.fault === 'block' ? (c.props.medium !== 'pneu' && c.props.bypass ? [['1', '2', 0.9]] : [['1', '2', 0.25]]) : [['1', '2']]; },
   eff(c, S) { // puissance effective dissipée (kW à ΔT 30 °C)
     let k = +c.props.kw || 0; if (c.props.cool === 'air') k *= 0.5;
     if (c.props.cool !== 'air') { const run = c.props.cool === 'fan' && c.props.mot ? motRunning(c.props.mot) : true; if (c.fault === 'fan' || run === false) k *= c.props.cool === 'fan' ? 0.25 : 0.05; }
@@ -1226,9 +1232,11 @@ def('cooler', {
       if (run) { const a = (S.t * 10) % (Math.PI * 2); ctx.strokeStyle = '#0369a1'; D.line(ctx, [70 + Math.cos(a) * 5, 22 + Math.sin(a) * 5, 70 - Math.cos(a) * 5, 22 - Math.sin(a) * 5]); D.line(ctx, [70 + Math.sin(a) * 5, 22 - Math.cos(a) * 5, 70 - Math.sin(a) * 5, 22 + Math.cos(a) * 5]); ctx.strokeStyle = INK; } }
     if (c.props.medium !== 'pneu' && c.props.bypass) { D.line(ctx, [40, 72, 6, 72, 6, 30]); D.line(ctx, [6, 22, 6, 8, 40, 8]); D.circle(ctx, 6, 30, 3.5, '#fff'); D.line(ctx, [2, 24, 6, 32, 10, 24]); }
     D.text(ctx, c.props.medium === 'pneu' ? 'air' : 'huile', 74, 76, 7, '#64748b', 'right');
+    D.text(ctx, (c.props.pmax || 16) + ' bar maxi', 74, 66, 6, '#64748b', 'right');
+    if (st(c).burst) { ctx.strokeStyle = '#dc2626'; ctx.lineWidth = 3; D.line(ctx, [26, 26, 54, 54]); D.line(ctx, [54, 26, 26, 54]); ctx.lineWidth = 1.6; ctx.strokeStyle = INK; }
   },
   probe(c, S) {
-    const k = this.eff(c, S), o = { 'Fluide': c.props.medium === 'pneu' ? 'air comprimé' : 'huile', 'Refroidissement': { air: 'convection naturelle', fan: 'ventilateur' + (c.props.mot ? ' (' + c.props.mot + (motRunning(c.props.mot) ? ' en marche' : ' ARRÊTÉ') + ')' : ''), eau: 'eau' }[c.props.cool], 'Puissance dissipée effective': fmt(k, 1) + ' kW à ΔT 30 °C' };
+    const k = this.eff(c, S), o = { 'État': st(c).burst ? 'ÉCLATÉ (surpression)' : 'bon', 'Pression maxi admissible': (c.props.pmax || 16) + ' bar', 'Fluide': c.props.medium === 'pneu' ? 'air comprimé' : 'huile', 'Refroidissement': { air: 'convection naturelle', fan: 'ventilateur' + (c.props.mot ? ' (' + c.props.mot + (motRunning(c.props.mot) ? ' en marche' : ' ARRÊTÉ') + ')' : ''), eau: 'eau' }[c.props.cool], 'Puissance dissipée effective': fmt(k, 1) + ' kW à ΔT 30 °C' };
     if (S) {
       if (c.props.medium === 'pneu') { const tin = 80, tout = k > 0 ? Math.max(25 + 10, tin - 45 * Math.min(1, k / 4)) : tin; o['Température air entrée / sortie'] = tin + ' °C / ' + fmt(tout, 0) + ' °C'; o['Condensats'] = k > 0 ? 'condensation dans le refroidisseur → purger le séparateur' : 'air chaud et humide envoyé au réseau'; }
       else o['Température huile'] = fmt(S.oilT, 1) + ' °C'; }
@@ -1706,6 +1714,23 @@ const Sim = {
     S.lv = lv;
     for (const c of App.comps) { const d = DEFS[c.type]; if (d.lstep) d.lstep(c, S); }
   },
+  temps() { // température de l'huile dans chaque liaison : huile du réservoir, échauffement au limiteur (≈ 0,06 °C/bar), refroidissement par les radiateurs
+    const S = this.S, T = new Map(), base = S.oilT || 25; S.wireT = T; if (!S.dump) return;
+    const wiresAt = (cid, pid) => App.wires.filter(w => (w.a.c === cid && w.a.p === pid) || (w.b.c === cid && w.b.p === pid));
+    for (const o of App.comps) {
+      if (o.type !== 'relief' && o.type !== 'pump') continue; const d = S.dump.get(S.root(o, 'T')); if (!d) continue;
+      const q0 = [[o.id, 'T', base + d.p * 0.06, d.q]], seen = new Set();
+      while (q0.length) {
+        const [cid, pid, t, q] = q0.shift();
+        for (const w of wiresAt(cid, pid)) {
+          if (seen.has(w.id)) continue; seen.add(w.id); T.set(w.id, Math.max(T.get(w.id) || 0, t));
+          const far = w.a.c === cid && w.a.p === pid ? w.b : w.a, fc = App.byId(far.c); if (!fc) continue;
+          if (fc.type === 'node') q0.push([fc.id, far.p, t, q]);
+          else if (fc.type === 'cooler' && fc.props.medium !== 'pneu') { const kw = DEFS.cooler.eff(fc, S) * clamp((t - 25) / 30, 0, 1.5), t2 = Math.max(25.5, t - kw * 36.3 / Math.max(q, 0.5)); q0.push([fc.id, far.p === '1' ? '2' : '1', t2, q]); }
+        }
+      }
+    }
+  },
   actuate(dt) {
     const S = this.S, acts = App.comps.filter(c => DEFS[c.type].isActuator);
     const groups = new Map(), res = new Map();
@@ -1717,6 +1742,15 @@ const Sim = {
     }
     const dispP = new Map(), flow = new Map(), lam = new Map();
     const addFlow = (r, q) => flow.set(r, (flow.get(r) || 0) + q);
+    const dump = new Map(); // débit déchargé par les limiteurs : racine côté T → { q, p }
+    const relDump = (root, q, p) => { // le débit excédentaire part au réservoir par le(s) limiteur(s) de ce réseau
+      if (q <= 0.01) return;
+      const rels = App.comps.filter(o => o.type === 'relief' && S.root(o, 'P') === root && S.vent(o, 'T') && o.fault !== 'stuck' && (o.fault === 'open' || o.fault === 'low' || st(o).xcap != null || (+o.props.set || 100) <= p * 1.02 + 1));
+      const lo = rels.length ? Math.min(...rels.map(o => +o.props.set || 100)) : 0, act = rels.filter(o => (+o.props.set || 100) <= lo + 1);
+      const outs = act.length ? act.map(o => S.root(o, 'T')) : App.comps.filter(o => o.type === 'pump' && S.root(o, 'P') === root).map(o => S.root(o, 'T'));
+      if (!outs.length) return; addFlow(root, q);
+      outs.forEach(r => { addFlow(r, q / outs.length); const d = dump.get(r) || { q: 0, p: 0 }; d.q += q / outs.length; d.p = Math.max(d.p, p); dump.set(r, d); });
+    };
     for (const [root, list] of groups) {
       const info = S.net.get(root); if (!info) continue;
       const hyd = info.med === 'h', pS = info.reg != null ? Math.min(info.pr, info.reg) : info.pr, pFull = pS * (1 + (info.plage || 0));
@@ -1740,7 +1774,7 @@ const Sim = {
         let p = n ? Math.min(pS, pmin + 2) : pFull;
         if (n && (throttled || byp > 0.01)) p = pS + (pFull - pS) * (byp / info.q);
         dispP.set(root, p);
-        if (byp > 0.01 && p >= pS - 0.5 && !(info.norel && !info.hasRel && info.cap == null)) lam.set(root, byp * p / 600);
+        if (byp > 0.01 && p >= pS - 0.5 && !(info.norel && !info.hasRel && info.cap == null)) { lam.set(root, byp * p / 600); relDump(root, byp, p); }
       } else {
         for (const [c, r] of moving) {
           const f = Math.min(S.R(c, r.feed), r.out ? S.R(c, r.out) : 1), k = Math.sqrt(clamp(1 - r.preq / pS, 0, 1)) * (1 - (r.leak || 0));
@@ -1753,8 +1787,9 @@ const Sim = {
     for (const [r, i] of S.net) if (i.src && !i.vent && i.med === 'h' && !groups.has(r)) {
       if (i.ls != null) dispP.set(r, i.ls); else if (i.reg != null) dispP.set(r, Math.min(i.reg, i.pr));
       else if (i.norel && !i.hasRel && i.cap == null) dispP.set(r, i.pr); // pompe seule sans limiteur : la pression monte jusqu'à la casse, pas de laminage
-      else { dispP.set(r, i.pr * (1 + (i.plage || 0))); lam.set(r, i.q * i.pr * (1 + (i.plage || 0)) / 600); }
+      else { dispP.set(r, i.pr * (1 + (i.plage || 0))); lam.set(r, i.q * i.pr * (1 + (i.plage || 0)) / 600); relDump(r, i.q, i.pr * (1 + (i.plage || 0))); }
     }
+    S.dump = dump;
     // pression créée par la charge dans une chambre isolée (fiche F05K : p = F / S)
     S.hold = new Map();
     for (const c of acts) {
@@ -1763,6 +1798,7 @@ const Sim = {
       const r = S.root(c, side), i = S.net.get(r); if (!i || (!i.src && !i.vent)) S.hold.set(r, F / (side === 'A' ? g.Ab : g.Aa) * 10);
     }
     S.dispP = dispP; S.flow = flow; S.lam = lam;
+    this.temps();
     for (const c of acts) DEFS[c.type].move(c, S, dt, res.get(c));
   },
   tick(dt = DT) {
@@ -2323,6 +2359,7 @@ function wireStyle(w, S) {
   if (w.color && (!S || w.keepColor)) { const base = S ? wireStyle0(w, S) : null; return [w.color, base ? base[1] : (k === 'h' ? 2.4 : 1.8), []]; }
   return wireStyle0(w, S);
 }
+function wireTemp(w, S) { if (!S) return null; const c = App.byId(w.a.c); if (!c) return null; const i = S.info(c, w.a.p); if ((i.med || (w.kind === 'h' ? 'h' : null)) !== 'h') return null; return (S.wireT && S.wireT.get(w.id)) || S.oilT || 25; }
 const HP_MIN = 30; // bar : au-dessus = haute pression
 function pZone(c, p, S) { // zone de pression d'un orifice : HP / BP / R (retour) / 0 (sans pression) — air : AIR / ECH
   const i = S.info(c, p), P = S.P(c, p), med = i.med || 'h';
@@ -2437,11 +2474,11 @@ function drawScene(g, S, ui) {
       if (!ids.has(w.a.c) || w.kind === 'e' || w.kind === 'l' || w.cut) continue; const c = App.byId(w.a.c); if (!c) continue; const i = S.info(c, w.a.p); if (w.kind === 'x' && !i.med) continue;
       const wp = wirePts(w); if (!wp) continue; let L = -1, m = null;
       for (let j = 1; j < wp.pts.length - 2; j++) { const a = wp.pts[j], b = wp.pts[j + 1], l = Math.hypot(b.x - a.x, b.y - a.y); if (l > L) { L = l; m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, v: Math.abs(a.x - b.x) < 0.5 }; } }
-      const r = S.root(c, w.a.p), o = best.get(r); if (m && (!o || L > o.L)) best.set(r, { L, m, c, p: w.a.p });
+      const r = S.root(c, w.a.p), o = best.get(r); if (m && (!o || L > o.L)) best.set(r, { L, m, c, p: w.a.p, w });
     }
-    for (const { L, m, c, p } of best.values()) {
+    for (const { L, m, c, p, w } of best.values()) {
       if (L < 24) continue; const z = pZone(c, p, S), P = S.P(c, p); if (z === '0') continue;
-      const txt = { HP: 'HP ', BP: 'BP ', R: 'R ', AIR: 'P ', ECH: 'Éch.' }[z] + (z === 'ECH' || (z === 'R' && P < 0.5) ? '' : fmt(P, P < 10 ? 1 : 0) + ' bar'), col = { HP: '#dc2626', BP: '#d97706', R: '#2563eb', AIR: '#1677ff', ECH: '#60a5fa' }[z];
+      const txt = { HP: 'HP ', BP: 'BP ', R: 'R ', AIR: 'P ', ECH: 'Éch.' }[z] + (z === 'ECH' || (z === 'R' && P < 0.5) ? '' : fmt(P, P < 10 ? 1 : 0) + ' bar') + (() => { const q = S.Q(c, p), t = wireTemp(w, S); return (q > 0.05 ? ' · ' + fmt(q, 1) + ' L/min' : '') + (t != null ? ' · ' + fmt(t, 0) + ' °C' : ''); })(), col = { HP: '#dc2626', BP: '#d97706', R: '#2563eb', AIR: '#1677ff', ECH: '#60a5fa' }[z];
       g.save(); g.font = '700 9px system-ui,sans-serif'; const tw = g.measureText(txt).width + 8, x = m.v ? m.x + 5 : m.x - tw / 2, y = m.v ? m.y - 6 : m.y - 15;
       g.fillStyle = '#fff'; g.strokeStyle = col; g.lineWidth = 1; g.beginPath(); g.roundRect(x, y, tw, 12, 3); g.fill(); g.stroke(); g.fillStyle = col; g.textBaseline = 'middle'; g.fillText(txt, x + 4, y + 6.5); g.restore();
     }
@@ -2861,7 +2898,7 @@ const Props = {
     const w = App.wires.find(x => x.id === App.selWire); if (!w) { App.selWire = null; return this.render(); }
     const A = portRef(w.a), B = portRef(w.b);
     let h = `<h3>${w.name ? esc(w.name) + ' — ' : ''}Liaison ${kname(w.kind)}</h3><div class="pp"><div class="kv"><span>De</span><b>${esc(A ? (A.c.props.tag || DEFS[A.c.type].name) + ' : ' + A.p.id : '?')}</b><span>Vers</span><b>${esc(B ? (B.c.props.tag || DEFS[B.c.type].name) + ' : ' + B.p.id : '?')}</b>`;
-    if (Sim.S && A) { const S = Sim.S; if (w.kind === 'e' || w.kind === 'x') { const pt = S.pot(A.c, A.p.id); h += `<span>Potentiel</span><b>${!pt ? 'non alimenté' : (pt.ph || '') + ' — ' + (pt.dc ? pt.dc + ' V DC' : fmt(Math.hypot(pt.re, pt.im), 0) + ' V AC / terre')}</b>`; } else if (w.kind !== 'l') h += `<span>Pression</span><b>${fmt(S.P(A.c, A.p.id), 2)} bar</b><span>Débit</span><b>${fmt(S.Q(A.c, A.p.id), 2)} L/min</b>`; }
+    if (Sim.S && A) { const S = Sim.S; if (w.kind === 'e' || w.kind === 'x') { const pt = S.pot(A.c, A.p.id); h += `<span>Potentiel</span><b>${!pt ? 'non alimenté' : (pt.ph || '') + ' — ' + (pt.dc ? pt.dc + ' V DC' : fmt(Math.hypot(pt.re, pt.im), 0) + ' V AC / terre')}</b>`; } else if (w.kind !== 'l') { h += `<span>Pression</span><b>${fmt(S.P(A.c, A.p.id), 2)} bar</b><span>Débit</span><b>${fmt(S.Q(A.c, A.p.id), 2)} L/min</b>`; const tw = wireTemp(w, S); if (tw != null) h += `<span>Température</span><b>${fmt(tw, 1)} °C</b>`; } }
     h += `</div>`;
     const fl = w.kind !== 'e' && w.kind !== 'l' && w.kind !== 'x';
     h += `<div class="row"><label>Nom ${fl ? 'du flexible / de la conduite' : 'du fil / du câble'}</label><input id="wName" value="${esc(w.name || '')}" placeholder="${fl ? 'ex. FL1, conduite P' : 'ex. W12'}"></div>

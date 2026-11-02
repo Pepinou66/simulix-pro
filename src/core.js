@@ -150,6 +150,7 @@ function wireStyle(w, S) {
   if (w.color && (!S || w.keepColor)) { const base = S ? wireStyle0(w, S) : null; return [w.color, base ? base[1] : (k === 'h' ? 2.4 : 1.8), []]; }
   return wireStyle0(w, S);
 }
+function wireTemp(w, S) { if (!S) return null; const c = App.byId(w.a.c); if (!c) return null; const i = S.info(c, w.a.p); if ((i.med || (w.kind === 'h' ? 'h' : null)) !== 'h') return null; return (S.wireT && S.wireT.get(w.id)) || S.oilT || 25; }
 const HP_MIN = 30; // bar : au-dessus = haute pression
 function pZone(c, p, S) { // zone de pression d'un orifice : HP / BP / R (retour) / 0 (sans pression) — air : AIR / ECH
   const i = S.info(c, p), P = S.P(c, p), med = i.med || 'h';
@@ -264,11 +265,11 @@ function drawScene(g, S, ui) {
       if (!ids.has(w.a.c) || w.kind === 'e' || w.kind === 'l' || w.cut) continue; const c = App.byId(w.a.c); if (!c) continue; const i = S.info(c, w.a.p); if (w.kind === 'x' && !i.med) continue;
       const wp = wirePts(w); if (!wp) continue; let L = -1, m = null;
       for (let j = 1; j < wp.pts.length - 2; j++) { const a = wp.pts[j], b = wp.pts[j + 1], l = Math.hypot(b.x - a.x, b.y - a.y); if (l > L) { L = l; m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, v: Math.abs(a.x - b.x) < 0.5 }; } }
-      const r = S.root(c, w.a.p), o = best.get(r); if (m && (!o || L > o.L)) best.set(r, { L, m, c, p: w.a.p });
+      const r = S.root(c, w.a.p), o = best.get(r); if (m && (!o || L > o.L)) best.set(r, { L, m, c, p: w.a.p, w });
     }
-    for (const { L, m, c, p } of best.values()) {
+    for (const { L, m, c, p, w } of best.values()) {
       if (L < 24) continue; const z = pZone(c, p, S), P = S.P(c, p); if (z === '0') continue;
-      const txt = { HP: 'HP ', BP: 'BP ', R: 'R ', AIR: 'P ', ECH: 'Éch.' }[z] + (z === 'ECH' || (z === 'R' && P < 0.5) ? '' : fmt(P, P < 10 ? 1 : 0) + ' bar'), col = { HP: '#dc2626', BP: '#d97706', R: '#2563eb', AIR: '#1677ff', ECH: '#60a5fa' }[z];
+      const txt = { HP: 'HP ', BP: 'BP ', R: 'R ', AIR: 'P ', ECH: 'Éch.' }[z] + (z === 'ECH' || (z === 'R' && P < 0.5) ? '' : fmt(P, P < 10 ? 1 : 0) + ' bar') + (() => { const q = S.Q(c, p), t = wireTemp(w, S); return (q > 0.05 ? ' · ' + fmt(q, 1) + ' L/min' : '') + (t != null ? ' · ' + fmt(t, 0) + ' °C' : ''); })(), col = { HP: '#dc2626', BP: '#d97706', R: '#2563eb', AIR: '#1677ff', ECH: '#60a5fa' }[z];
       g.save(); g.font = '700 9px system-ui,sans-serif'; const tw = g.measureText(txt).width + 8, x = m.v ? m.x + 5 : m.x - tw / 2, y = m.v ? m.y - 6 : m.y - 15;
       g.fillStyle = '#fff'; g.strokeStyle = col; g.lineWidth = 1; g.beginPath(); g.roundRect(x, y, tw, 12, 3); g.fill(); g.stroke(); g.fillStyle = col; g.textBaseline = 'middle'; g.fillText(txt, x + 4, y + 6.5); g.restore();
     }
@@ -688,7 +689,7 @@ const Props = {
     const w = App.wires.find(x => x.id === App.selWire); if (!w) { App.selWire = null; return this.render(); }
     const A = portRef(w.a), B = portRef(w.b);
     let h = `<h3>${w.name ? esc(w.name) + ' — ' : ''}Liaison ${kname(w.kind)}</h3><div class="pp"><div class="kv"><span>De</span><b>${esc(A ? (A.c.props.tag || DEFS[A.c.type].name) + ' : ' + A.p.id : '?')}</b><span>Vers</span><b>${esc(B ? (B.c.props.tag || DEFS[B.c.type].name) + ' : ' + B.p.id : '?')}</b>`;
-    if (Sim.S && A) { const S = Sim.S; if (w.kind === 'e' || w.kind === 'x') { const pt = S.pot(A.c, A.p.id); h += `<span>Potentiel</span><b>${!pt ? 'non alimenté' : (pt.ph || '') + ' — ' + (pt.dc ? pt.dc + ' V DC' : fmt(Math.hypot(pt.re, pt.im), 0) + ' V AC / terre')}</b>`; } else if (w.kind !== 'l') h += `<span>Pression</span><b>${fmt(S.P(A.c, A.p.id), 2)} bar</b><span>Débit</span><b>${fmt(S.Q(A.c, A.p.id), 2)} L/min</b>`; }
+    if (Sim.S && A) { const S = Sim.S; if (w.kind === 'e' || w.kind === 'x') { const pt = S.pot(A.c, A.p.id); h += `<span>Potentiel</span><b>${!pt ? 'non alimenté' : (pt.ph || '') + ' — ' + (pt.dc ? pt.dc + ' V DC' : fmt(Math.hypot(pt.re, pt.im), 0) + ' V AC / terre')}</b>`; } else if (w.kind !== 'l') { h += `<span>Pression</span><b>${fmt(S.P(A.c, A.p.id), 2)} bar</b><span>Débit</span><b>${fmt(S.Q(A.c, A.p.id), 2)} L/min</b>`; const tw = wireTemp(w, S); if (tw != null) h += `<span>Température</span><b>${fmt(tw, 1)} °C</b>`; } }
     h += `</div>`;
     const fl = w.kind !== 'e' && w.kind !== 'l' && w.kind !== 'x';
     h += `<div class="row"><label>Nom ${fl ? 'du flexible / de la conduite' : 'du fil / du câble'}</label><input id="wName" value="${esc(w.name || '')}" placeholder="${fl ? 'ex. FL1, conduite P' : 'ex. W12'}"></div>

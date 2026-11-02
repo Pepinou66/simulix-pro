@@ -550,7 +550,7 @@ def('hpump', {
     let q = (+c.props.disp || 16) * nr / 1000 * ((+c.props.etav || 95) / 100) * (t === 'variable' ? clamp(+c.props.cmd || 0, 0, 100) / 100 : 1);
     if (c.fault === 'low') q *= 0.55; if (c.fault === 'cav') q *= 0.5; if (s.dry) q = 0;
     const reg = c.fault === 'reg' ? null : t === 'regp' ? (+c.props.pc || 160) : null, ls = c.fault === 'reg' ? null : t === 'ls' ? (+c.props.dls || 20) : null;
-    let p = +c.props.padm || 250; if (t === 'ls' && c.fault !== 'reg') p = Math.min(p, +c.props.pc || p);
+    let p = Math.max((+c.props.padm || 250) * 1.6, ...App.comps.filter(o => o.type === 'relief').map(o => (+o.props.set || 100) + 5)); if (t === 'ls' && c.fault !== 'reg') p = Math.min(p, +c.props.pc || p); // sans limiteur la pression monte au-delà de l'admissible (casse)
     return { q, p, reg, ls, nr };
   },
   update(c, S) { const dry = !S.vent(c, 'S'); if (st(c).dry !== dry) { st(c).dry = dry; return true; } return false; },
@@ -559,8 +559,8 @@ def('hpump', {
     const s = st(c), v = this.srcVal(c); if (s.dry && v.nr > 0 && !s.warnDry) { s.warnDry = 1; S.stickyBanner = S.banner = '⚠ Pompe ' + c.props.tag + ' : aspiration S non reliée au réservoir — la pompe tourne à sec (cavitation, destruction)'; }
     if (!s.dry) s.warnDry = 0;
     const p = S.P(c, 'P'), lim = +c.props.padm || 250;
-    if (v.q > 0.01 && v.reg == null && p >= lim * 0.97 && !s.warnP) { s.warnP = 1; S.stickyBanner = S.banner = '💥 Pompe ' + c.props.tag + ' : ' + Math.round(p) + ' bar ≥ pression maxi admissible ' + lim + ' bar — aucun limiteur de pression ne protège le refoulement (casse pompe / flexibles)' + ((r => r ? ' : le limiteur ' + r.props.tag + ' est monté en série, son orifice T doit aller au réservoir' : '')(App.comps.find(o => o.type === 'relief' && st(o).ser))); }
-    if (p < lim * 0.9) s.warnP = 0;
+    if (v.q > 0.01 && p > lim * 1.01 && !s.warnP) { s.warnP = 1; const rl = App.comps.find(o => o.type === 'relief' && S.root(o, 'P') === S.root(c, 'P') && S.vent(o, 'T')); S.stickyBanner = S.banner = rl ? '💥 Pompe ' + c.props.tag + ' : ' + Math.round(p) + ' bar > pression maxi admissible ' + lim + ' bar — le limiteur ' + rl.props.tag + ' est taré à ' + rl.props.set + ' bar, trop haut pour la pompe : régler le tarage sous ' + lim + ' bar' : '💥 Pompe ' + c.props.tag + ' : ' + Math.round(p) + ' bar > pression maxi admissible ' + lim + ' bar — aucun limiteur de pression ne protège le refoulement (casse pompe / flexibles)' + ((r => r ? ' : le limiteur ' + r.props.tag + ' est monté en série, son orifice T doit aller au réservoir' : '')(App.comps.find(o => o.type === 'relief' && st(o).ser))); }
+    if (p < lim && s.warnP) { s.warnP = 0; if ((S.stickyBanner || '').startsWith('💥 Pompe ' + c.props.tag + ' ')) S.stickyBanner = ''; }
   },
   press(c) { if (c.props.ptype === 'variable') { c.props.cmd = ((+c.props.cmd || 0) >= 100 ? 0 : (+c.props.cmd || 0) + 25); Props.render(); return true; } },
   hint: c => c.props.ptype === 'variable' ? 'Cliquer : régler la cylindrée (' + c.props.cmd + ' %)' : 'Pompe ' + PTECH[c.props.tech || 'engr'] + ' — ' + PTYPES[c.props.ptype || 'fixe'],
@@ -914,16 +914,22 @@ def('filter', {
 const motRunning = tag => { const m = App.comps.find(o => o.props.tag === tag && (o.type === 'motor3' || o.type === 'motor')); if (!m) return null; const s = st(m); return m.type === 'motor3' ? Math.abs(s.n || 0) > 700 : !!s.on; };
 def('cooler', {
   name: 'Radiateur / refroidisseur', cat: 'Appareils fluidiques', w: 80, h: 80, ports: [P('1', 40, 80, 'f', 'entrée'), P('2', 40, 0, 'f', 'sortie')],
-  defProps: { tag: '0E1', medium: 'hyd', cool: 'fan', kw: 3, mot: '', bypass: true },
+  defProps: { tag: '0E1', medium: 'hyd', cool: 'fan', kw: 3, mot: '', bypass: true, pmax: 16 },
   fieldsFn: c => [TAGF, { k: 'medium', label: 'Fluide', type: 'sel', opts: ['hyd', 'pneu'], labels: ['Huile hydraulique (refroidisseur d\'huile)', 'Air comprimé (refroidisseur final / aftercooler)'] },
     { k: 'cool', label: 'Refroidissement', type: 'sel', opts: ['air', 'fan', 'eau'], labels: ['Air — convection naturelle', 'Air — ventilateur électrique', 'Eau (échangeur à plaques / tubulaire)'] },
     { k: 'kw', label: 'Puissance dissipée nominale (kW à ΔT 30 °C)', type: 'num', step: 0.5 },
+    { k: 'pmax', label: 'Pression maxi admissible (bar) — au-delà le faisceau éclate', type: 'num', step: 1 },
     ...(c.props.cool === 'fan' ? [{ k: 'mot', label: 'Moteur du ventilateur (repère, vide = toujours en marche)', type: 'text' }] : []),
     ...(c.props.medium !== 'pneu' ? [{ k: 'bypass', label: 'Clapet by-pass de protection (taré ≈ 2 bar)', type: 'chk' }] : []), REFF],
-  catalog: [{ ref: 'Refroidisseur huile/air 1,5 kW 24 V DC', props: { medium: 'hyd', cool: 'fan', kw: 1.5 } }, { ref: 'Refroidisseur huile/air 5 kW 400 V', props: { medium: 'hyd', cool: 'fan', kw: 5 } }, { ref: 'Échangeur huile/eau à plaques 15 kW', props: { medium: 'hyd', cool: 'eau', kw: 15 } }, { ref: 'Refroidisseur final d\'air comprimé air/air', props: { medium: 'pneu', cool: 'fan', kw: 4 } }],
+  catalog: [{ ref: 'Refroidisseur huile/air 1,5 kW 24 V DC — 16 bar', props: { medium: 'hyd', cool: 'fan', kw: 1.5, pmax: 16 } }, { ref: 'Refroidisseur huile/air 5 kW 400 V — 26 bar', props: { medium: 'hyd', cool: 'fan', kw: 5, pmax: 26 } }, { ref: 'Échangeur huile/eau à plaques 15 kW — 30 bar', props: { medium: 'hyd', cool: 'eau', kw: 15, pmax: 30 } }, { ref: 'Refroidisseur final d\'air comprimé air/air', props: { medium: 'pneu', cool: 'fan', kw: 4 } }],
   faults: [['clog', 'Faisceau encrassé (ailettes bouchées) : refroidissement réduit'], ['fan', 'Ventilateur / circulation d\'eau en panne'], ['block', 'Circuit interne bouché (perte de charge)']],
   bom: c => (c.props.medium === 'pneu' ? 'Refroidisseur final d\'air comprimé ' : 'Refroidisseur d\'huile ') + (c.props.cool === 'eau' ? 'huile/eau ' : 'à air ') + c.props.kw + ' kW' + (c.props.cool === 'fan' ? ' avec ventilateur' : ''),
-  links(c) { return c.fault === 'block' ? (c.props.medium !== 'pneu' && c.props.bypass ? [['1', '2', 0.9]] : [['1', '2', 0.25]]) : [['1', '2']]; },
+  step(c, S) { // surpression : le faisceau éclate (fuite d'huile / d'air)
+    const s = st(c), p = Math.max(S.P(c, '1'), S.P(c, '2')), lim = +c.props.pmax || 16;
+    if (!s.burst && p > lim * 1.05) { s.burst = true; S.stickyBanner = S.banner = '💥 Radiateur ' + c.props.tag + ' : ' + Math.round(p) + ' bar > pression maxi admissible ' + lim + ' bar — faisceau éclaté' + (c.props.medium === 'pneu' ? '' : ' : le monter sur le retour basse pression (après le limiteur / le distributeur), jamais sur la ligne HP'); }
+  },
+  sources(c) { return st(c).burst ? [['1', 'vent'], ['2', 'vent']] : []; },
+  links(c) { if (st(c).burst) return []; return c.fault === 'block' ? (c.props.medium !== 'pneu' && c.props.bypass ? [['1', '2', 0.9]] : [['1', '2', 0.25]]) : [['1', '2']]; },
   eff(c, S) { // puissance effective dissipée (kW à ΔT 30 °C)
     let k = +c.props.kw || 0; if (c.props.cool === 'air') k *= 0.5;
     if (c.props.cool !== 'air') { const run = c.props.cool === 'fan' && c.props.mot ? motRunning(c.props.mot) : true; if (c.fault === 'fan' || run === false) k *= c.props.cool === 'fan' ? 0.25 : 0.05; }
@@ -940,9 +946,11 @@ def('cooler', {
       if (run) { const a = (S.t * 10) % (Math.PI * 2); ctx.strokeStyle = '#0369a1'; D.line(ctx, [70 + Math.cos(a) * 5, 22 + Math.sin(a) * 5, 70 - Math.cos(a) * 5, 22 - Math.sin(a) * 5]); D.line(ctx, [70 + Math.sin(a) * 5, 22 - Math.cos(a) * 5, 70 - Math.sin(a) * 5, 22 + Math.cos(a) * 5]); ctx.strokeStyle = INK; } }
     if (c.props.medium !== 'pneu' && c.props.bypass) { D.line(ctx, [40, 72, 6, 72, 6, 30]); D.line(ctx, [6, 22, 6, 8, 40, 8]); D.circle(ctx, 6, 30, 3.5, '#fff'); D.line(ctx, [2, 24, 6, 32, 10, 24]); }
     D.text(ctx, c.props.medium === 'pneu' ? 'air' : 'huile', 74, 76, 7, '#64748b', 'right');
+    D.text(ctx, (c.props.pmax || 16) + ' bar maxi', 74, 66, 6, '#64748b', 'right');
+    if (st(c).burst) { ctx.strokeStyle = '#dc2626'; ctx.lineWidth = 3; D.line(ctx, [26, 26, 54, 54]); D.line(ctx, [54, 26, 26, 54]); ctx.lineWidth = 1.6; ctx.strokeStyle = INK; }
   },
   probe(c, S) {
-    const k = this.eff(c, S), o = { 'Fluide': c.props.medium === 'pneu' ? 'air comprimé' : 'huile', 'Refroidissement': { air: 'convection naturelle', fan: 'ventilateur' + (c.props.mot ? ' (' + c.props.mot + (motRunning(c.props.mot) ? ' en marche' : ' ARRÊTÉ') + ')' : ''), eau: 'eau' }[c.props.cool], 'Puissance dissipée effective': fmt(k, 1) + ' kW à ΔT 30 °C' };
+    const k = this.eff(c, S), o = { 'État': st(c).burst ? 'ÉCLATÉ (surpression)' : 'bon', 'Pression maxi admissible': (c.props.pmax || 16) + ' bar', 'Fluide': c.props.medium === 'pneu' ? 'air comprimé' : 'huile', 'Refroidissement': { air: 'convection naturelle', fan: 'ventilateur' + (c.props.mot ? ' (' + c.props.mot + (motRunning(c.props.mot) ? ' en marche' : ' ARRÊTÉ') + ')' : ''), eau: 'eau' }[c.props.cool], 'Puissance dissipée effective': fmt(k, 1) + ' kW à ΔT 30 °C' };
     if (S) {
       if (c.props.medium === 'pneu') { const tin = 80, tout = k > 0 ? Math.max(25 + 10, tin - 45 * Math.min(1, k / 4)) : tin; o['Température air entrée / sortie'] = tin + ' °C / ' + fmt(tout, 0) + ' °C'; o['Condensats'] = k > 0 ? 'condensation dans le refroidisseur → purger le séparateur' : 'air chaud et humide envoyé au réseau'; }
       else o['Température huile'] = fmt(S.oilT, 1) + ' °C'; }

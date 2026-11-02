@@ -147,6 +147,23 @@ const Sim = {
     S.lv = lv;
     for (const c of App.comps) { const d = DEFS[c.type]; if (d.lstep) d.lstep(c, S); }
   },
+  temps() { // température de l'huile dans chaque liaison : huile du réservoir, échauffement au limiteur (≈ 0,06 °C/bar), refroidissement par les radiateurs
+    const S = this.S, T = new Map(), base = S.oilT || 25; S.wireT = T; if (!S.dump) return;
+    const wiresAt = (cid, pid) => App.wires.filter(w => (w.a.c === cid && w.a.p === pid) || (w.b.c === cid && w.b.p === pid));
+    for (const o of App.comps) {
+      if (o.type !== 'relief' && o.type !== 'pump') continue; const d = S.dump.get(S.root(o, 'T')); if (!d) continue;
+      const q0 = [[o.id, 'T', base + d.p * 0.06, d.q]], seen = new Set();
+      while (q0.length) {
+        const [cid, pid, t, q] = q0.shift();
+        for (const w of wiresAt(cid, pid)) {
+          if (seen.has(w.id)) continue; seen.add(w.id); T.set(w.id, Math.max(T.get(w.id) || 0, t));
+          const far = w.a.c === cid && w.a.p === pid ? w.b : w.a, fc = App.byId(far.c); if (!fc) continue;
+          if (fc.type === 'node') q0.push([fc.id, far.p, t, q]);
+          else if (fc.type === 'cooler' && fc.props.medium !== 'pneu') { const kw = DEFS.cooler.eff(fc, S) * clamp((t - 25) / 30, 0, 1.5), t2 = Math.max(25.5, t - kw * 36.3 / Math.max(q, 0.5)); q0.push([fc.id, far.p === '1' ? '2' : '1', t2, q]); }
+        }
+      }
+    }
+  },
   actuate(dt) {
     const S = this.S, acts = App.comps.filter(c => DEFS[c.type].isActuator);
     const groups = new Map(), res = new Map();
@@ -158,6 +175,15 @@ const Sim = {
     }
     const dispP = new Map(), flow = new Map(), lam = new Map();
     const addFlow = (r, q) => flow.set(r, (flow.get(r) || 0) + q);
+    const dump = new Map(); // débit déchargé par les limiteurs : racine côté T → { q, p }
+    const relDump = (root, q, p) => { // le débit excédentaire part au réservoir par le(s) limiteur(s) de ce réseau
+      if (q <= 0.01) return;
+      const rels = App.comps.filter(o => o.type === 'relief' && S.root(o, 'P') === root && S.vent(o, 'T') && o.fault !== 'stuck' && (o.fault === 'open' || o.fault === 'low' || st(o).xcap != null || (+o.props.set || 100) <= p * 1.02 + 1));
+      const lo = rels.length ? Math.min(...rels.map(o => +o.props.set || 100)) : 0, act = rels.filter(o => (+o.props.set || 100) <= lo + 1);
+      const outs = act.length ? act.map(o => S.root(o, 'T')) : App.comps.filter(o => o.type === 'pump' && S.root(o, 'P') === root).map(o => S.root(o, 'T'));
+      if (!outs.length) return; addFlow(root, q);
+      outs.forEach(r => { addFlow(r, q / outs.length); const d = dump.get(r) || { q: 0, p: 0 }; d.q += q / outs.length; d.p = Math.max(d.p, p); dump.set(r, d); });
+    };
     for (const [root, list] of groups) {
       const info = S.net.get(root); if (!info) continue;
       const hyd = info.med === 'h', pS = info.reg != null ? Math.min(info.pr, info.reg) : info.pr, pFull = pS * (1 + (info.plage || 0));
@@ -181,7 +207,7 @@ const Sim = {
         let p = n ? Math.min(pS, pmin + 2) : pFull;
         if (n && (throttled || byp > 0.01)) p = pS + (pFull - pS) * (byp / info.q);
         dispP.set(root, p);
-        if (byp > 0.01 && p >= pS - 0.5 && !(info.norel && !info.hasRel && info.cap == null)) lam.set(root, byp * p / 600);
+        if (byp > 0.01 && p >= pS - 0.5 && !(info.norel && !info.hasRel && info.cap == null)) { lam.set(root, byp * p / 600); relDump(root, byp, p); }
       } else {
         for (const [c, r] of moving) {
           const f = Math.min(S.R(c, r.feed), r.out ? S.R(c, r.out) : 1), k = Math.sqrt(clamp(1 - r.preq / pS, 0, 1)) * (1 - (r.leak || 0));
@@ -194,8 +220,9 @@ const Sim = {
     for (const [r, i] of S.net) if (i.src && !i.vent && i.med === 'h' && !groups.has(r)) {
       if (i.ls != null) dispP.set(r, i.ls); else if (i.reg != null) dispP.set(r, Math.min(i.reg, i.pr));
       else if (i.norel && !i.hasRel && i.cap == null) dispP.set(r, i.pr); // pompe seule sans limiteur : la pression monte jusqu'à la casse, pas de laminage
-      else { dispP.set(r, i.pr * (1 + (i.plage || 0))); lam.set(r, i.q * i.pr * (1 + (i.plage || 0)) / 600); }
+      else { dispP.set(r, i.pr * (1 + (i.plage || 0))); lam.set(r, i.q * i.pr * (1 + (i.plage || 0)) / 600); relDump(r, i.q, i.pr * (1 + (i.plage || 0))); }
     }
+    S.dump = dump;
     // pression créée par la charge dans une chambre isolée (fiche F05K : p = F / S)
     S.hold = new Map();
     for (const c of acts) {
@@ -204,6 +231,7 @@ const Sim = {
       const r = S.root(c, side), i = S.net.get(r); if (!i || (!i.src && !i.vent)) S.hold.set(r, F / (side === 'A' ? g.Ab : g.Aa) * 10);
     }
     S.dispP = dispP; S.flow = flow; S.lam = lam;
+    this.temps();
     for (const c of acts) DEFS[c.type].move(c, S, dt, res.get(c));
   },
   tick(dt = DT) {
