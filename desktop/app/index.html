@@ -42,7 +42,7 @@ select.tbs{background:#263044;color:#fff;border:1px solid #3a4558;border-radius:
 #main{display:grid;grid-template-columns:var(--palW,232px) 6px 1fr 6px var(--propW,270px);min-height:0;position:relative}
 .split-h{cursor:col-resize;background:#d6dbe3;position:relative;z-index:4}
 .split-h:hover,.split-h.on{background:#0f62fe}
-#palette,#props{background:var(--panel);border-right:1px solid var(--line);overflow:auto;min-height:0}
+#palette,#props{background:var(--panel);border-right:1px solid var(--line);overflow:auto;min-height:0;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;touch-action:pan-y}
 #props{border-right:0;border-left:1px solid var(--line)}
 #center{position:relative;min-width:0;min-height:0;display:flex;flex-direction:column}
 #views{flex:1;display:flex;min-height:0;position:relative}
@@ -57,7 +57,7 @@ select.tbs{background:#263044;color:#fff;border:1px solid #3a4558;border-radius:
 .cat>h4:hover{background:#f6f8fb}
 .cat .items{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:0 8px 8px}
 .cat.closed .items{display:none}
-.pi{border:1px solid var(--line);border-radius:6px;background:#fff;padding:3px;text-align:center;font-size:10.5px;line-height:1.15;color:#334;cursor:pointer;user-select:none;touch-action:none}
+.pi{border:1px solid var(--line);border-radius:6px;background:#fff;padding:3px;text-align:center;font-size:10.5px;line-height:1.15;color:#334;cursor:pointer;user-select:none;touch-action:manipulation}
 .pi:hover{border-color:var(--accent);background:var(--accent2)}
 .pi.on{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent2) inset;background:var(--accent2)}
 .pi canvas{display:block;margin:0 auto 2px;width:96px;height:52px}
@@ -325,7 +325,7 @@ function store(k, v) { try { if (v === undefined) return localStorage.getItem(k)
      ouverture de projets, recherche de mise à jour (APK sur GitHub Releases) ;
    - version web installable (PWA, Android et iPhone/iPad) : service worker.
    ===================================================================== */
-const SIMULIX_VERSION = '2.1.1';
+const SIMULIX_VERSION = '2.1.2';
 (function () {
   const C = window.Capacitor, native = !!(C && C.isNativePlatform && C.isNativePlatform());
   if (native) {
