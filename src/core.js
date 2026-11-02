@@ -124,13 +124,17 @@ const View = {
   }
 };
 const WCOL = { e: '#334155', p: '#2563eb', h: '#b91c1c', l: '#15803d', f: '#475569', x: '#334155' };
+const PHCOL = { '+': '#dc2626', '0': '#2563eb', L1: '#92400e', L2: '#111827', L3: '#6b7280', N: '#2563eb', PE: '#16a34a', S1: '#ea580c', S2: '#0891b2' };
 function wireStyle(w, S) {
   const k = w.kind;
   if (w.cut && !App.hideFaults) return ['#dc2626', 2, [6, 4]];
   if (!S) return [WCOL[k] || '#334155', k === 'h' ? 2.2 : 1.6, k === 'f' ? [] : []];
   const c = App.byId(w.a.c), p = w.a.p, i = S.info(c, p);
-  if (k === 'e' || (k === 'x' && (i.plus || i.zero || S.vp.has(S.root(c, p))))) {
-    const v = S.V(c, p); if (S.vd.get(S.root(c, p)) === 24) return ['#dc2626', 2.4, []]; if (S.vd.get(S.root(c, p)) === 0) return ['#2563eb', 2.4, []]; if (v === 24) return ['#f87171', 1.6, []]; return ['#64748b', 1.6, []];
+  if (k === 'e' || (k === 'x' && (i.pots || S.vp.has(S.root(c, p))))) {
+    const r = S.root(c, p); if ((S.shorts || []).includes(r)) return ['#f43f5e', 3.5, [3, 2]];
+    const pt = S.pot(c, p); if (!pt) return ['#64748b', 1.6, []];
+    const col = PHCOL[pt.ph] || (pt.dc > 0 || Math.hypot(pt.re, pt.im) > 0 ? '#dc2626' : '#2563eb'), direct = S.vd.has(r);
+    return [col, direct ? 2.6 : 1.6, direct ? [] : [5, 3]];
   }
   if (k === 'l') return [S.L(c, p) ? '#16a34a' : '#475569', S.L(c, p) ? 2.6 : 1.6, []];
   const med = i.med || (k === 'h' ? 'h' : 'p'), P = S.P(c, p);
@@ -174,7 +178,9 @@ function render() {
   if (App.placing && !S) { const d = DEFS[App.placing.type]; const tmp = { type: App.placing.type, props: Object.assign({}, d.defProps, App.placing.props), rot: 0, state: {} }; const { w, h } = compSize(tmp); g.save(); g.globalAlpha = .45; g.translate(snap(mouseW.x - w / 2), snap(mouseW.y - h / 2)); d.draw(g, tmp, null); g.restore(); }
 }
 let badges = [], labelRects = [];
-const LABPOS = [['tl', 'En haut à gauche'], ['tr', 'En haut à droite'], ['bl', 'En bas à gauche'], ['br', 'En bas à droite'], ['free', 'Libre (glisser le repère)']];
+const LABPOS = [['rt', 'À droite — en haut'], ['rm', 'À droite — au milieu'], ['rb', 'À droite — en bas'], ['lt', 'À gauche — en haut'], ['lm', 'À gauche — au milieu'], ['lb', 'À gauche — en bas'], ['free', 'Libre (glisser le repère)']];
+const LABOLD = { tl: 'lt', tr: 'rt', bl: 'lb', br: 'rb' };
+const labPos = c => LABOLD[c.props.labPos] || c.props.labPos || 'rt';
 // Repère + références croisées : texte détouré (lisible sur les fils), position au choix
 function labelBox(g, c, b) {
   const d = DEFS[c.type], lines = [];
@@ -182,10 +188,10 @@ function labelBox(g, c, b) {
   const xr = App.opts.xref ? xrefs(c) : ''; if (xr) lines.push([xr, 10, '#6d28d9', false]);
   if (!lines.length) return null;
   let W = 0; lines.forEach(([t, sz, , bo]) => { g.font = (bo ? '600 ' : '') + sz + 'px system-ui,sans-serif'; W = Math.max(W, g.measureText(t).width); });
-  const H = lines.reduce((a, l) => a + l[1] * 1.25, 0), pos = c.props.labPos || 'tl', m = 4;
+  const H = lines.reduce((a, l) => a + l[1] * 1.25, 0), pos = labPos(c), m = 8;
   let x, y;
   if (pos === 'free') { x = b.x + b.w / 2 + (+c.props.labDx || 0) - W / 2; y = b.y + b.h / 2 + (+c.props.labDy || 0) - H / 2; }
-  else { x = pos[1] === 'l' ? b.x : b.x + b.w - W; y = pos[0] === 't' ? b.y - H - m : b.y + b.h + m; }
+  else { x = pos[0] === 'l' ? b.x - m - W : b.x + b.w + m; y = pos[1] === 't' ? b.y + 2 : pos[1] === 'b' ? b.y + b.h - H - 2 : b.y + (b.h - H) / 2; }
   return { lines, x, y, W, H };
 }
 function drawLabel(g, c, b, ui) {
@@ -196,7 +202,7 @@ function drawLabel(g, c, b, ui) {
     g.strokeStyle = 'rgba(255,255,255,.95)'; g.lineWidth = 4; g.strokeText(t, x, y); g.fillStyle = col; g.fillText(t, x, y); y += sz * 1.25;
   }
   g.restore();
-  if (ui) { labelRects.push({ c, x: L.x - 2, y: L.y - 2, w: L.W + 4, h: L.H + 4 }); if (App.sel.has(c.id) && (c.props.labPos === 'free')) { g.save(); g.strokeStyle = '#a78bfa'; g.setLineDash([3, 2]); g.lineWidth = 1 / App.view.s; g.strokeRect(L.x - 2, L.y - 2, L.W + 4, L.H + 4); g.restore(); } }
+  if (ui) { labelRects.push({ c, x: L.x - 2, y: L.y - 2, w: L.W + 4, h: L.H + 4 }); if (App.sel.has(c.id) && labPos(c) === 'free') { g.save(); g.strokeStyle = '#a78bfa'; g.setLineDash([3, 2]); g.lineWidth = 1 / App.view.s; g.strokeRect(L.x - 2, L.y - 2, L.W + 4, L.H + 4); g.restore(); } }
 }
 function drawScene(g, S, ui) {
   const v = App.view; if (ui) { badges = []; labelRects = []; }
@@ -227,6 +233,7 @@ function drawScene(g, S, ui) {
     if (ui && S && App.hover === c.id && d.press) { const pr = drag && drag.mode === 'press' && drag.c === c; g.save(); g.fillStyle = pr ? 'rgba(245,158,11,.16)' : 'rgba(15,98,254,.07)'; g.strokeStyle = pr ? 'rgba(245,158,11,.9)' : 'rgba(15,98,254,.45)'; g.lineWidth = 1.5 / v.s; g.beginPath(); g.roundRect(b.x - 6, b.y - 6, b.w + 12, b.h + 12, 8); g.fill(); g.stroke(); g.restore(); }
     if (ui && !S && App.sel.has(c.id)) { g.strokeStyle = '#0f62fe'; g.lineWidth = 1.5 / v.s; g.setLineDash([4 / v.s, 3 / v.s]); g.strokeRect(b.x - 5, b.y - 5, b.w + 10, b.h + 10); g.setLineDash([]); }
     if (ui && c.fault && !App.hideFaults) { const r = clamp(9 / v.s, 7, 22), x = b.x + b.w + r * .6, y = b.y - r * .6; g.save(); g.fillStyle = '#dc2626'; g.strokeStyle = '#fff'; g.lineWidth = 2 / v.s; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); g.stroke(); D.text(g, '!', x, y + r * .05, r * 1.45, '#fff', 'center', true); g.restore(); badges.push({ c, x, y, r }); }
+    if (S && c.state && c.state.burnt) { D.text(g, '💥', b.x + b.w / 2, b.y + b.h / 2, 22, '#111'); }
     if (ui && c._found) D.text(g, '✔', b.x + b.w + 4, b.y + 2, 14, '#16a34a');
     // ports
     if (ui && !S) for (const p of compPorts(c)) {
@@ -475,7 +482,7 @@ const Props = {
       else if (f.type === 'range') h += `<div class="row"><label>${esc(f.label)} : <b id="rv_${f.k}">${esc(v)}</b></label><input type="range" min="0" max="100" data-k="${f.k}" value="${esc(v)}"></div>`;
       else h += `<div class="row"><label>${esc(f.label)}</label><input data-k="${f.k}" ${f.type === 'num' ? `type="number" step="${f.step || 1}"` : ''} value="${esc(v)}"></div>`;
     });
-    if ((!d.noLabel && c.props.tag) || xrefs(c)) h += `<div class="row"><label>Position du repère et des références</label><select id="pLab">${LABPOS.map(([k, l]) => `<option value="${k}" ${(c.props.labPos || 'tl') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`;
+    if ((!d.noLabel && c.props.tag) || xrefs(c)) h += `<div class="row"><label>Position du repère et des références</label><select id="pLab">${LABPOS.map(([k, l]) => `<option value="${k}" ${labPos(c) === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`;
     const FL = faultList(c);
     if (FL.length && !App.hideFaults) h += `<div class="row"><label>Défaillance simulée</label><select id="pFault"><option value="">Aucune</option>${FL.map(([k, l]) => `<option value="${k}" ${c.fault === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></div>`;
     h += '<div class="btns">';
@@ -514,7 +521,7 @@ const Props = {
     const w = App.wires.find(x => x.id === App.selWire); if (!w) { App.selWire = null; return this.render(); }
     const A = portRef(w.a), B = portRef(w.b);
     let h = `<h3>Liaison ${kname(w.kind)}</h3><div class="pp"><div class="kv"><span>De</span><b>${esc(A ? (A.c.props.tag || DEFS[A.c.type].name) + ' : ' + A.p.id : '?')}</b><span>Vers</span><b>${esc(B ? (B.c.props.tag || DEFS[B.c.type].name) + ' : ' + B.p.id : '?')}</b>`;
-    if (Sim.S && A) { const S = Sim.S; if (w.kind === 'e' || w.kind === 'x') h += `<span>Potentiel</span><b>${S.V(A.c, A.p.id) == null ? 'flottant' : S.V(A.c, A.p.id) + ' V'}</b>`; else if (w.kind !== 'l') h += `<span>Pression</span><b>${fmt(S.P(A.c, A.p.id), 2)} bar</b><span>Débit</span><b>${fmt(S.Q(A.c, A.p.id), 2)} L/min</b>`; }
+    if (Sim.S && A) { const S = Sim.S; if (w.kind === 'e' || w.kind === 'x') { const pt = S.pot(A.c, A.p.id); h += `<span>Potentiel</span><b>${!pt ? 'non alimenté' : (pt.ph || '') + ' — ' + (pt.dc ? pt.dc + ' V DC' : fmt(Math.hypot(pt.re, pt.im), 0) + ' V AC / terre')}</b>`; } else if (w.kind !== 'l') h += `<span>Pression</span><b>${fmt(S.P(A.c, A.p.id), 2)} bar</b><span>Débit</span><b>${fmt(S.Q(A.c, A.p.id), 2)} L/min</b>`; }
     h += `</div><div class="btns">`;
     const fl = w.kind !== 'e' && w.kind !== 'l' && w.kind !== 'x';
     if (!App.hideFaults) h += `<button class="btn" id="wCut">${w.cut ? (fl ? '✔ Remplacer le flexible' : '✔ Réparer le fil') : (fl ? '💥 Simuler une rupture de flexible' : '✂ Simuler un fil coupé')}</button>`;

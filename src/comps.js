@@ -38,6 +38,7 @@ function cylAt(S, tag, pos) {
 const TAGF = { k: 'tag', label: 'Repère', type: 'text' };
 const REFF = { k: 'ref', label: 'Référence catalogue', type: 'text' };
 const PWF = { k: 'power', label: 'Puissance (W)', type: 'num', step: 0.5 };
+const VNF = { k: 'vnom', label: 'Tension nominale (V)', type: 'sel', opts: ['12', '24', '48', '110', '230', '400'] };
 
 /* ---------- Dessins de contacts électriques ---------- */
 function drawContact(ctx, c, closed, nc, actuator) {
@@ -95,7 +96,7 @@ function loadDef(type, name, o) {
     name, cat: 'Électrique — commande', w: 40, h: 60,
     ports: [P('a', 20, 0, 'e'), P('b', 20, 60, 'e')],
     faults: [['open', 'Bobine / charge coupée']],
-    loads(c) { return c.fault === 'open' ? [] : [['a', 'b', +c.props.power || 2]]; },
+    loads(c) { return (c.fault === 'open' || st(c).burnt) ? [] : [['a', 'b', +c.props.power || 2]]; },
     update(c, S) {
       const on = c.fault !== 'open' && S.loadOn(c, 'a', 'b');
       let ch = false; if (st(c).on !== on) { st(c).on = on; ch = true; }
@@ -106,12 +107,12 @@ function loadDef(type, name, o) {
   }, o));
 }
 loadDef('coil', 'Bobine de relais', {
-  setsTag: true, defProps: { tag: 'K1', power: 3 }, fields: [TAGF, PWF, REFF], bom: 'Relais 24 V DC',
+  setsTag: true, defProps: { tag: 'K1', power: 3 }, fields: [TAGF, VNF, PWF, REFF], bom: c => 'Relais / contacteur bobine ' + (c.props.vnom || 24) + ' V',
   draw(ctx, c) { ctx.strokeStyle = INK; ctx.lineWidth = 1.6; D.line(ctx, [20, 0, 20, 18]); D.line(ctx, [20, 42, 20, 60]); D.rect(ctx, 6, 18, 28, 24, st(c).on ? ON_FILL : '#fff'); }
 });
 loadDef('coil_t', 'Relais temporisé', {
   defProps: { tag: 'KT1', power: 3, delay: 3, mode: 'travail' },
-  fields: [TAGF, { k: 'delay', label: 'Temporisation (s)', type: 'num', step: 0.1 }, { k: 'mode', label: 'Type', type: 'sel', opts: ['travail', 'repos'] }, PWF, REFF],
+  fields: [TAGF, { k: 'delay', label: 'Temporisation (s)', type: 'num', step: 0.1 }, { k: 'mode', label: 'Type', type: 'sel', opts: ['travail', 'repos'] }, VNF, PWF, REFF],
   bom: 'Relais temporisé 24 V DC',
   update(c, S) {
     const s = st(c); const on = c.fault !== 'open' && S.loadOn(c, 'a', 'b');
@@ -135,12 +136,12 @@ loadDef('coil_t', 'Relais temporisé', {
   probe: c => ({ 'Temps écoulé': fmt(st(c).acc || 0, 2) + ' s' })
 });
 loadDef('sol', 'Solénoïde de distributeur', {
-  setsTag: true, info: c => 'Commande les distributeurs dont l\'électro-aimant est ' + c.props.tag + ' (clic sur le distributeur : commande manuelle)', defProps: { tag: 'Y1', power: 5 }, fields: [TAGF, PWF], bom: 'Bobine de distributeur 24 V DC',
+  setsTag: true, info: c => 'Commande les distributeurs dont l\'électro-aimant est ' + c.props.tag + ' (clic sur le distributeur : commande manuelle)', defProps: { tag: 'Y1', power: 5 }, fields: [TAGF, VNF, PWF], bom: c => 'Bobine de distributeur ' + (c.props.vnom || 24) + ' V',
   draw(ctx, c) { ctx.strokeStyle = INK; ctx.lineWidth = 1.6; D.line(ctx, [20, 0, 20, 18]); D.line(ctx, [20, 42, 20, 60]); D.rect(ctx, 6, 18, 28, 24, st(c).on ? ON_FILL : '#fff'); D.line(ctx, [6, 42, 34, 18]); }
 });
 const LAMPC = { rouge: '#ef4444', vert: '#22c55e', orange: '#f59e0b', bleu: '#3b82f6', blanc: '#f8fafc', jaune: '#facc15' };
 loadDef('lamp', 'Voyant', {
-  defProps: { tag: 'H1', power: 2, color: 'vert' }, fields: [TAGF, { k: 'color', label: 'Couleur', type: 'sel', opts: Object.keys(LAMPC) }, PWF], bom: 'Voyant lumineux 24 V',
+  defProps: { tag: 'H1', power: 2, color: 'vert' }, fields: [TAGF, { k: 'color', label: 'Couleur', type: 'sel', opts: Object.keys(LAMPC) }, VNF, PWF], bom: c => 'Voyant lumineux ' + (c.props.vnom || 24) + ' V',
   draw(ctx, c) {
     const on = st(c).on; ctx.strokeStyle = INK; ctx.lineWidth = 1.6; D.line(ctx, [20, 0, 20, 16]); D.line(ctx, [20, 44, 20, 60]);
     if (on) { ctx.save(); ctx.shadowColor = LAMPC[c.props.color] || '#fff'; ctx.shadowBlur = 18; D.circle(ctx, 20, 30, 14, LAMPC[c.props.color]); ctx.restore(); }
@@ -149,7 +150,7 @@ loadDef('lamp', 'Voyant', {
   }
 });
 loadDef('motor', 'Moteur électrique CC', {
-  defProps: { tag: 'M1', power: 60 }, fields: [TAGF, PWF, REFF], bom: 'Moteur 24 V DC',
+  defProps: { tag: 'M1', power: 60 }, fields: [TAGF, VNF, PWF, REFF], bom: c => (+c.props.vnom >= 110 ? 'Moteur monophasé ' : 'Moteur ') + (c.props.vnom || 24) + ' V',
   step(c, S, dt) { const s = st(c); s.ang = ((s.ang || 0) + (s.on ? dt * 6 : 0)) % (Math.PI * 2); },
   draw(ctx, c) {
     const s = st(c); ctx.strokeStyle = INK; ctx.lineWidth = 1.6; D.line(ctx, [20, 0, 20, 12]); D.line(ctx, [20, 48, 20, 60]);
@@ -158,7 +159,7 @@ loadDef('motor', 'Moteur électrique CC', {
   }
 });
 loadDef('buzzer', 'Avertisseur sonore', {
-  defProps: { tag: 'H2', power: 2 }, fields: [TAGF, PWF], bom: 'Avertisseur 24 V',
+  defProps: { tag: 'H2', power: 2 }, fields: [TAGF, VNF, PWF], bom: c => 'Avertisseur ' + (c.props.vnom || 24) + ' V',
   draw(ctx, c) {
     const on = st(c).on; ctx.strokeStyle = INK; ctx.lineWidth = 1.6; D.line(ctx, [20, 0, 20, 20]); D.line(ctx, [20, 44, 20, 60]);
     ctx.beginPath(); ctx.arc(20, 32, 13, Math.PI, 0); ctx.closePath(); ctx.fillStyle = on ? ON_FILL : '#fff'; ctx.fill(); ctx.stroke();
@@ -171,16 +172,16 @@ loadDef('buzzer', 'Avertisseur sonore', {
 def('supply', {
   name: 'Alimentation 24 V DC', cat: 'Électrique — commande', w: 40, h: 80,
   ports: [P('+', 20, 0, 'e'), P('0', 20, 80, 'e')],
-  defProps: { tag: 'G1', imax: 5 }, fields: [TAGF, { k: 'imax', label: 'Courant max. (A)', type: 'num', step: 0.5 }, REFF],
-  faults: [['off', 'Alimentation hors service']], bom: 'Alimentation stabilisée 24 V DC',
-  sources(c, S) { if (c.fault === 'off' || S.trip[c.id]) return []; return [['+', '+'], ['0', '0']]; },
+  defProps: { tag: 'G1', imax: 5, U: '24' }, fields: [TAGF, { k: 'U', label: 'Tension (V DC)', type: 'sel', opts: ['12', '24', '48'] }, { k: 'imax', label: 'Courant max. (A)', type: 'num', step: 0.5 }, REFF],
+  faults: [['off', 'Alimentation hors service']], bom: c => 'Alimentation stabilisée ' + (c.props.U || 24) + ' V DC',
+  sources(c, S) { if (c.fault === 'off' || S.trip[c.id]) return []; const U = +c.props.U || 24; return [['+', 'pot', { sys: c.id, re: 0, im: 0, dc: U, ph: '+' }], ['0', 'pot', { sys: c.id, re: 0, im: 0, dc: 0, ph: '0' }]]; },
   press(c, x, y, S) { if (S && S.trip[c.id]) { delete S.trip[c.id]; toast('Protection réarmée'); return true; } },
   draw(ctx, c, S) {
     ctx.strokeStyle = INK; ctx.lineWidth = 1.6; D.line(ctx, [20, 0, 20, 14]); D.line(ctx, [20, 66, 20, 80]);
     const trip = S && S.trip[c.id];
     D.rect(ctx, 2, 14, 36, 52, trip ? '#fee2e2' : '#f8fafc');
     D.text(ctx, '+', 30, 22, 11, '#dc2626', 'center', true); D.text(ctx, '−', 30, 58, 13, '#2563eb', 'center', true);
-    D.text(ctx, '24V', 18, 36, 10, INK, 'center', true); D.text(ctx, 'DC', 18, 47, 9);
+    D.text(ctx, (c.props.U || 24) + 'V', 18, 36, 10, INK, 'center', true); D.text(ctx, 'DC', 18, 47, 9);
     if (trip) D.text(ctx, '⚡', 10, 58, 11, '#dc2626');
   },
   probe: (c, S) => S ? { 'Courant': fmt(S.current[c.id] || 0, 2) + ' A', 'Protection': S.trip[c.id] ? 'DÉCLENCHÉE (cliquer pour réarmer)' : 'OK' } : {},
@@ -189,17 +190,231 @@ def('supply', {
 def('vm', {
   name: 'Voltmètre', cat: 'Instruments de mesure', w: 60, h: 60,
   ports: [P('a', 20, 60, 'e', '+'), P('b', 40, 60, 'e', '−')], defProps: { tag: 'V1' }, fields: [TAGF], bom: 'Multimètre',
-  val(c, S) { if (!S) return null; const a = S.V(c, 'a'), b = S.V(c, 'b'); return (a == null || b == null) ? 0 : a - b; },
+  val(c, S) { if (!S) return null; const d = S.dV(c, 'a', 'b'); return d == null ? 0 : d; },
+  ac(c, S) { const p = S && (S.pot(c, 'a') || S.pot(c, 'b')); return !!(p && Math.hypot(p.re, p.im) > 0.1) || !!(p && /^(L|N|PE|S)/.test(p.ph)); },
   draw(ctx, c, S) {
     ctx.strokeStyle = INK; ctx.lineWidth = 1.6; D.line(ctx, [20, 60, 20, 46]); D.line(ctx, [40, 60, 40, 46]);
     D.rect(ctx, 4, 2, 52, 44, '#1e293b'); ctx.fillStyle = '#a7f3d0'; ctx.fillRect(9, 8, 42, 18);
-    const v = this.val(c, S); D.text(ctx, v == null ? '--.-' : fmt(v, 1), 30, 17, 11, '#064e3b', 'center', true);
-    D.text(ctx, 'V DC', 30, 36, 9, '#cbd5e1');
+    const v = this.val(c, S); D.text(ctx, v == null ? '--.-' : fmt(v, v >= 100 ? 0 : 1), 30, 17, 11, '#064e3b', 'center', true);
+    D.text(ctx, this.ac(c, S) ? 'V AC' : 'V DC', 30, 36, 9, '#cbd5e1');
   },
-  probe(c, S) { return { 'Tension': fmt(this.val(c, S), 2) + ' V' }; },
+  probe(c, S) { return { 'Tension': fmt(this.val(c, S), 1) + (this.ac(c, S) ? ' V AC' : ' V DC') }; },
   plot(c, S) { return this.val(c, S) || 0; }, plotUnit: 'V'
 });
 
+/* =====================================================================
+   ÉLECTRIQUE — PUISSANCE (réseaux 230 V / 400 V, mono et triphasé)
+   Potentiels en phaseurs : V = U/√3 par phase, L1 0°, L2 −120°, L3 +120°
+   ===================================================================== */
+const PCAT = 'Électrique — puissance';
+const ph = (sys, V, deg, label) => ({ sys, re: V * Math.cos(deg * Math.PI / 180), im: V * Math.sin(deg * Math.PI / 180), dc: 0, ph: label });
+const mainsReset = { press(c, x, y, S) { if (S && S.trip[c.id]) { delete S.trip[c.id]; toast('Alimentation réarmée'); return true; } } };
+def('mains3', Object.assign({
+  name: 'Réseau triphasé (3~ + N + PE)', cat: PCAT, w: 200, h: 60, mains: true,
+  ports: [P('L1', 20, 60, 'e', 'L1'), P('L2', 60, 60, 'e', 'L2'), P('L3', 100, 60, 'e', 'L3'), P('N', 140, 60, 'e', 'N'), P('PE', 180, 60, 'e', 'PE')],
+  defProps: { tag: 'Q0', U: '400', f: '50', imax: 63 },
+  fields: [TAGF, { k: 'U', label: 'Tension entre phases (V)', type: 'sel', opts: ['400', '380', '230', '690'], labels: ['400 V (230/400 V)', '380 V (220/380 V, ancien réseau)', '230 V (127/230 V)', '690 V (400/690 V)'] }, { k: 'f', label: 'Fréquence (Hz)', type: 'sel', opts: ['50', '60'] }, { k: 'imax', label: 'Calibre de branchement (A)', type: 'num' }],
+  faults: [['phase', 'Perte de la phase L3'], ['low', 'Sous-tension réseau (−20 %)'], ['off', 'Coupure réseau']],
+  bom: c => 'Arrivée réseau triphasé ' + c.props.U + ' V ' + c.props.f + ' Hz',
+  sources(c, S) {
+    if (c.fault === 'off' || S.trip[c.id]) return []; const U = (+c.props.U || 400) * (c.fault === 'low' ? 0.8 : 1), V = U / Math.sqrt(3);
+    const o = [['L1', 'pot', ph('grid', V, 0, 'L1')], ['L2', 'pot', ph('grid', V, -120, 'L2')], ['N', 'pot', ph('grid', 0, 0, 'N')], ['PE', 'pot', ph('grid', 0, 0, 'PE')]];
+    if (c.fault !== 'phase') o.push(['L3', 'pot', ph('grid', V, 120, 'L3')]); return o;
+  },
+  draw(ctx, c, S) {
+    ctx.strokeStyle = INK; ctx.lineWidth = 1.6; D.rect(ctx, 2, 4, 196, 40, S && S.trip[c.id] ? '#fee2e2' : '#f8fafc');
+    [['L1', 20, '#92400e'], ['L2', 60, '#111827'], ['L3', 100, '#6b7280'], ['N', 140, '#2563eb'], ['PE', 180, '#16a34a']].forEach(([n, x, col]) => { ctx.strokeStyle = col; D.line(ctx, [x, 44, x, 60]); D.text(ctx, n, x, 36, 9, col, 'center', true); });
+    D.text(ctx, '3~ ' + (c.props.U || 400) + ' V  ' + (c.props.f || 50) + ' Hz', 100, 17, 11, INK, 'center', true);
+  },
+  probe: (c, S) => ({ 'Tension composée': (c.props.U || 400) + ' V', 'Tension simple': fmt((+c.props.U || 400) / Math.sqrt(3), 0) + ' V', 'Courant estimé': S ? fmt(S.current[c.id] || 0, 1) + ' A' : '—', 'Protection': S && S.trip[c.id] ? 'DÉCLENCHÉE (cliquer pour réarmer)' : 'OK' })
+}, mainsReset));
+def('mains1', Object.assign({
+  name: 'Réseau monophasé (L + N + PE)', cat: PCAT, w: 120, h: 60, mains: true,
+  ports: [P('L', 20, 60, 'e', 'L'), P('N', 60, 60, 'e', 'N'), P('PE', 100, 60, 'e', 'PE')],
+  defProps: { tag: 'Q0', U: '230', f: '50', imax: 32 },
+  fields: [TAGF, { k: 'U', label: 'Tension (V)', type: 'sel', opts: ['230', '220', '127', '120', '110'] }, { k: 'f', label: 'Fréquence (Hz)', type: 'sel', opts: ['50', '60'] }, { k: 'imax', label: 'Calibre de branchement (A)', type: 'num' }],
+  faults: [['low', 'Sous-tension réseau (−20 %)'], ['off', 'Coupure réseau']],
+  bom: c => 'Arrivée réseau monophasé ' + c.props.U + ' V ' + c.props.f + ' Hz',
+  sources(c, S) { if (c.fault === 'off' || S.trip[c.id]) return []; const U = (+c.props.U || 230) * (c.fault === 'low' ? 0.8 : 1); return [['L', 'pot', ph('grid', U, 0, 'L1')], ['N', 'pot', ph('grid', 0, 0, 'N')], ['PE', 'pot', ph('grid', 0, 0, 'PE')]]; },
+  draw(ctx, c, S) {
+    ctx.strokeStyle = INK; ctx.lineWidth = 1.6; D.rect(ctx, 2, 4, 116, 40, S && S.trip[c.id] ? '#fee2e2' : '#f8fafc');
+    [['L', 20, '#92400e'], ['N', 60, '#2563eb'], ['PE', 100, '#16a34a']].forEach(([n, x, col]) => { ctx.strokeStyle = col; D.line(ctx, [x, 44, x, 60]); D.text(ctx, n, x, 36, 9, col, 'center', true); });
+    D.text(ctx, '1~ ' + (c.props.U || 230) + ' V', 60, 17, 11, INK, 'center', true);
+  },
+  probe: (c, S) => ({ 'Tension': (c.props.U || 230) + ' V AC', 'Courant estimé': S ? fmt(S.current[c.id] || 0, 1) + ' A' : '—' })
+}, mainsReset));
+// Transformateur et alimentation à découpage : sources isolées alimentées par leur primaire
+function convDef(type, name, o) {
+  def(type, Object.assign({
+    name, cat: PCAT, w: 80, h: 100, mains: true,
+    ports: [P('P1', 20, 0, 'e'), P('P2', 60, 0, 'e'), P(o.out[0], 20, 100, 'e'), P(o.out[1], 60, 100, 'e')],
+    faults: [['open', 'Enroulement / électronique hors service']],
+    update(c, S) {
+      const s = st(c), Up = +c.props.Up || 230, d = c.fault === 'open' || s.burnt ? 0 : (dV(S.Vd(c, 'P1'), S.Vd(c, 'P2')) || 0);
+      if (d > Up * 1.4 && !s.burnt) { s.burnt = true; S.stickyBanner = S.banner = '💥 ' + (c.props.tag || name) + ' : primaire ' + Up + ' V alimenté sous ' + Math.round(d) + ' V'; }
+      const on = !s.burnt && d >= Up * 0.85; if (s.on !== on) { s.on = on; return true; } return false;
+    },
+    loads: c => st(c).burnt ? [] : [['P1', 'P2', +c.props.va || 100]],
+    sources(c, S) { if (!st(c).on || S.trip[c.id]) return []; return o.src(c); }
+  }, o));
+}
+convDef('transfo', 'Transformateur de commande', {
+  out: ['S1', 'S2'], defProps: { tag: 'T1', Up: '400', Us: '24', va: 100 },
+  fields: [TAGF, { k: 'Up', label: 'Primaire (V)', type: 'sel', opts: ['400', '230'] }, { k: 'Us', label: 'Secondaire (V AC)', type: 'sel', opts: ['12', '24', '48', '110', '230'] }, { k: 'va', label: 'Puissance (VA)', type: 'num' }, REFF],
+  bom: c => 'Transformateur de commande ' + c.props.Up + ' V / ' + c.props.Us + ' V ' + c.props.va + ' VA',
+  src: c => [['S1', 'pot', ph(c.id, +c.props.Us || 24, 0, 'S1')], ['S2', 'pot', ph(c.id, 0, 0, 'S2')]],
+  draw(ctx, c, S) {
+    const on = st(c).on; ctx.strokeStyle = INK; ctx.lineWidth = 1.6; D.line(ctx, [20, 0, 20, 22]); D.line(ctx, [60, 0, 60, 22]); D.line(ctx, [20, 78, 20, 100]); D.line(ctx, [60, 78, 60, 100]);
+    D.circle(ctx, 40, 38, 18, on ? '#fef9c3' : '#fff'); D.circle(ctx, 40, 62, 18, on ? '#fef9c3' : '#fff'); D.line(ctx, [20, 22, 28, 26]); D.line(ctx, [60, 22, 52, 26]); D.line(ctx, [20, 78, 28, 74]); D.line(ctx, [60, 78, 52, 74]);
+    D.text(ctx, c.props.Up + 'V', 76, 30, 8, '#475569', 'left'); D.text(ctx, c.props.Us + 'V', 76, 70, 8, '#475569', 'left');
+  }
+});
+convDef('psu', 'Alimentation 230 V AC → 24 V DC', {
+  out: ['+', '0'], defProps: { tag: 'G1', Up: '230', Uout: '24', imax: 5, va: 120 },
+  fields: [TAGF, { k: 'Up', label: 'Entrée (V AC)', type: 'sel', opts: ['230', '400'] }, { k: 'Uout', label: 'Sortie (V DC)', type: 'sel', opts: ['12', '24', '48'] }, { k: 'imax', label: 'Courant max. (A)', type: 'num' }, REFF],
+  bom: c => 'Alimentation à découpage ' + c.props.Up + ' V AC / ' + c.props.Uout + ' V DC ' + c.props.imax + ' A',
+  src: c => [['+', 'pot', { sys: c.id, re: 0, im: 0, dc: +c.props.Uout || 24, ph: '+' }], ['0', 'pot', { sys: c.id, re: 0, im: 0, dc: 0, ph: '0' }]],
+  press(c, x, y, S) { if (S && S.trip[c.id]) { delete S.trip[c.id]; toast('Protection réarmée'); return true; } },
+  draw(ctx, c, S) {
+    const on = st(c).on; ctx.strokeStyle = INK; ctx.lineWidth = 1.6; D.line(ctx, [20, 0, 20, 14]); D.line(ctx, [60, 0, 60, 14]); D.line(ctx, [20, 86, 20, 100]); D.line(ctx, [60, 86, 60, 100]);
+    D.rect(ctx, 4, 14, 72, 72, S && S.trip[c.id] ? '#fee2e2' : on ? '#ecfdf5' : '#fff'); D.line(ctx, [4, 86, 76, 14]);
+    D.text(ctx, '~', 22, 32, 14, INK); D.text(ctx, '=', 58, 68, 14, INK); D.text(ctx, c.props.Uout + 'V', 56, 50, 8, '#475569');
+    D.text(ctx, '+', 30, 94, 9, '#dc2626', 'center', true); D.text(ctx, '−', 70, 94, 10, '#2563eb', 'center', true);
+  },
+  probe: (c, S) => ({ 'Sortie': st(c).on ? c.props.Uout + ' V DC' : 'coupée', 'Courant': S ? fmt(S.current[c.id] || 0, 2) + ' A' : '—' })
+});
+// Appareillage multipolaire (pas de 40 px, aligné sur les bornes du réseau)
+function polesN(c) { return clamp(+c.props.poles || 3, 1, 4); }
+function polesDef(type, name, o) {
+  def(type, Object.assign({
+    name, cat: PCAT, h: 80,
+    size(c) { return { w: polesN(c) * 40 + (o.extraW || 0), h: 80 }; },
+    portsFn(c) { const n = polesN(c), out = []; for (let i = 0; i < n; i++) { const x = 20 + i * 40, lb = (o.lbl || ['1', '3', '5', '7']); out.push(P('a' + i, x, 0, 'e', lb[i] || ''), P('b' + i, x, 80, 'e', String(+(lb[i] || 0) + 1))); } return out; },
+    links(c) { if (!this.isClosed(c)) return []; const n = polesN(c), l = []; for (let i = 0; i < n; i++) l.push(['a' + i, 'b' + i]); if (this.extraLinks) l.push(...this.extraLinks(c)); return l; },
+    draw(ctx, c, S) {
+      const n = polesN(c), cl = this.isClosed(c), s = st(c); ctx.strokeStyle = INK; ctx.lineWidth = 1.6;
+      for (let i = 0; i < n; i++) {
+        const x = 20 + i * 40; D.line(ctx, [x, 0, x, 24]); D.line(ctx, [x, 56, x, 80]); ctx.lineWidth = 2;
+        D.line(ctx, cl ? [x, 56, x, 24] : [x, 56, x - 12, 28]); ctx.lineWidth = 1.4;
+        if (o.sym === 'breaker') { D.line(ctx, [x - 4, 20, x + 4, 28]); D.line(ctx, [x + 4, 20, x - 4, 28]); }
+        if (o.sym === 'contactor') { ctx.beginPath(); ctx.arc(x + 4, 24, 4, Math.PI / 2, Math.PI * 1.5); ctx.stroke(); }
+        if (o.sym === 'fuse') { D.rect(ctx, x - 4, 4, 8, 16, s.blown ? '#fecaca' : '#fff'); }
+        if (o.sym === 'thermal') { D.line(ctx, [x, 30, x + 6, 30, x + 6, 40, x, 40]); }
+      }
+      if (n > 1 || o.sym === 'breaker') { D.dash(ctx, 1); ctx.strokeStyle = '#64748b'; D.line(ctx, [cl ? 20 : 8, 42, 20 + (n - 1) * 40 + 4, 42]); D.dash(ctx, 0); }
+      ctx.strokeStyle = INK; o.drawExtra && o.drawExtra.call(this, ctx, c, S, n, cl);
+    }
+  }, o));
+}
+const tripH = { protect: true, trip(c, why) { st(c).closed = false; st(c).tripped = why || 'Déclenché'; } };
+polesDef('breaker', 'Disjoncteur magnéto-thermique', Object.assign({
+  sym: 'breaker', defProps: { tag: 'Q1', poles: 3, In: 16, courbe: 'C' },
+  fields: [TAGF, { k: 'poles', label: 'Nombre de pôles', type: 'sel', opts: ['1', '2', '3', '4'], labels: ['1P', '1P+N / 2P', '3P', '3P+N / 4P'] }, { k: 'In', label: 'Calibre In (A)', type: 'num' }, { k: 'courbe', label: 'Courbe', type: 'sel', opts: ['B', 'C', 'D'] }, REFF],
+  faults: [['stuck', 'Disjoncteur bloqué ouvert'], ['weld', 'Contacts soudés : ne protège plus']],
+  bom: c => 'Disjoncteur ' + polesN(c) + 'P ' + c.props.In + ' A courbe ' + c.props.courbe,
+  init(c) { st(c).closed = true; },
+  isClosed(c) { if (c.fault === 'stuck') return false; if (c.fault === 'weld') return true; return st(c).closed !== false; },
+  trip(c, why) { if (c.fault === 'weld') return; st(c).closed = false; st(c).tripped = why; },
+  press(c, x, y, S) { const s = st(c); s.closed = !(s.closed !== false); if (s.closed) { s.tripped = null; if (S) S.stickyBanner = ''; } return true; },
+  hint: c => st(c).closed !== false ? 'Cliquer : ouvrir le disjoncteur' : 'Cliquer : réarmer / fermer',
+  drawExtra(ctx, c, S, n, cl) { const s = st(c); ctx.fillStyle = cl ? '#16a34a' : '#dc2626'; ctx.fillRect(n * 40 - 14, 60, 10, 14); if (s.tripped) D.text(ctx, '⚡', n * 40 - 9, 52, 10, '#dc2626'); },
+  probe: c => ({ 'État': st(c).closed !== false ? 'fermé' : 'ouvert' + (st(c).tripped ? ' — ' + st(c).tripped : '') })
+}, { protect: true }));
+polesDef('rcd', 'Interrupteur / disjoncteur différentiel 30 mA', {
+  sym: 'breaker', protect: true, extraW: 20, defProps: { tag: 'Q2', poles: 2, In: 40, idn: 30 },
+  fields: [TAGF, { k: 'poles', label: 'Nombre de pôles', type: 'sel', opts: ['2', '4'], labels: ['2P (mono)', '4P (tri + N)'] }, { k: 'In', label: 'Calibre (A)', type: 'num' }, { k: 'idn', label: 'Sensibilité IΔn (mA)', type: 'sel', opts: ['30', '300'] }, REFF],
+  faults: [['stuck', 'Bloqué ouvert'], ['nosense', 'Différentiel défectueux (ne détecte plus les fuites)']],
+  bom: c => 'Interrupteur différentiel ' + polesN(c) + 'P ' + c.props.In + ' A ' + c.props.idn + ' mA',
+  init(c) { st(c).closed = true; },
+  isClosed(c) { return c.fault !== 'stuck' && st(c).closed !== false; },
+  trip(c, why) { st(c).closed = false; st(c).tripped = why; },
+  update(c, S) { if (c.fault === 'nosense' || !this.isClosed(c) || !S.leaks || !S.leaks.size) return false; const n = polesN(c); for (let i = 0; i < n; i++) if (S.leaks.has(S.root(c, 'b' + i))) { this.trip(c, 'Défaut d\'isolement (fuite à la terre)'); S.stickyBanner = S.banner = '⚠ ' + c.props.tag + ' : fuite de courant à la terre détectée — déclenchement'; return true; } return false; },
+  press(c, x, y, S) { const s = st(c); s.closed = !(s.closed !== false); if (s.closed) { s.tripped = null; if (S) S.stickyBanner = ''; } return true; },
+  hint: c => st(c).closed !== false ? 'Cliquer : ouvrir' : 'Cliquer : réarmer',
+  drawExtra(ctx, c, S, n, cl) { const x = n * 40; D.circle(ctx, x + 2, 40, 9, '#fff'); D.text(ctx, 'Δ', x + 2, 40, 9, INK, 'center', true); ctx.fillStyle = cl ? '#16a34a' : '#dc2626'; ctx.fillRect(x - 4, 62, 10, 12); D.text(ctx, c.props.idn + 'mA', x + 2, 76, 7, '#475569'); },
+  probe: c => ({ 'État': st(c).closed !== false ? 'fermé' : 'ouvert' + (st(c).tripped ? ' — ' + st(c).tripped : '') })
+});
+polesDef('fuse', 'Sectionneur porte-fusibles', {
+  sym: 'fuse', protect: true, defProps: { tag: 'Q1', poles: 3, In: 10, type: 'aM' },
+  fields: [TAGF, { k: 'poles', label: 'Nombre de pôles', type: 'sel', opts: ['1', '2', '3', '4'] }, { k: 'In', label: 'Calibre fusibles (A)', type: 'num' }, { k: 'type', label: 'Type de fusible', type: 'sel', opts: ['aM', 'gG'], labels: ['aM (accompagnement moteur)', 'gG (usage général)'] }, REFF],
+  faults: [['blown', 'Un fusible fondu']],
+  bom: c => 'Sectionneur porte-fusibles ' + polesN(c) + 'P avec fusibles ' + c.props.type + ' ' + c.props.In + ' A',
+  init(c) { st(c).closed = true; },
+  isClosed(c) { return st(c).closed !== false && !st(c).blown; },
+  links(c) { if (!this.isClosed(c)) return []; const n = polesN(c), l = []; for (let i = 0; i < n; i++) if (!(c.fault === 'blown' && i === n - 1)) l.push(['a' + i, 'b' + i]); return l; },
+  trip(c, why) { st(c).blown = true; },
+  press(c) { const s = st(c); if (s.blown) { s.blown = false; toast('Fusibles remplacés'); } else s.closed = !(s.closed !== false); return true; },
+  hint: c => st(c).blown ? 'Cliquer : remplacer les fusibles' : 'Cliquer : ouvrir / fermer le sectionneur',
+  probe: c => ({ 'État': st(c).blown ? 'FUSIBLES FONDUS' : st(c).closed !== false ? 'fermé' : 'ouvert' })
+});
+polesDef('kmp', 'Contacteur — pôles de puissance', {
+  sym: 'contactor', defProps: { tag: 'KM1', poles: 3 }, lbl: ['1', '3', '5', '7'],
+  fields: [TAGF, { k: 'poles', label: 'Nombre de pôles', type: 'sel', opts: ['2', '3', '4'] }, REFF],
+  faults: [['weld', 'Pôles soudés (restent fermés)'], ['burnt', 'Pôles brûlés (ne ferment plus)']],
+  bom: c => 'Contacteur ' + polesN(c) + ' pôles (bobine ' + c.props.tag + ')',
+  update: tagUpdate, isClosed(c) { if (c.fault === 'weld') return true; if (c.fault === 'burnt') return false; return !!st(c).act; },
+  info: c => 'Pôles commandés par la bobine ' + c.props.tag
+});
+polesDef('rth', 'Relais thermique', {
+  sym: 'thermal', defProps: { tag: 'F2', poles: 3, Ir: 8, motor: 'M1' }, lbl: ['1', '3', '5', '7'],
+  fields: [{ k: 'tag', label: 'Repère (contacts 95-96 NF / 97-98 NO : contacts de relais du même repère)', type: 'text' }, { k: 'Ir', label: 'Réglage Ir (A)', type: 'num', step: 0.1 }, { k: 'motor', label: 'Moteur protégé (repère)', type: 'text' }, REFF],
+  faults: [['stuck', 'Ne déclenche plus (bilame bloqué)']],
+  bom: c => 'Relais de protection thermique réglé à ' + c.props.Ir + ' A',
+  isClosed: () => true,
+  update(c, S) { const t = !!st(c).trip; if (S.tags[c.props.tag] !== t) { S.tags[c.props.tag] = t; return true; } return false; },
+  step(c, S, dt) {
+    const s = st(c), m = App.comps.find(o => o.props.tag === c.props.motor && (o.type === 'motor3' || o.type === 'motor')); const I = m ? (st(m).I || 0) : 0, Ir = +c.props.Ir || 8;
+    s.heat = Math.max(0, (s.heat || 0) + (I > Ir * 1.05 ? dt * 3 * ((I / Ir) * (I / Ir) - 1) : -dt * 0.8)); // bilame : tolère le courant de démarrage (temps accéléré)
+    if (s.heat > 40 && !s.trip && c.fault !== 'stuck') { s.trip = true; S.stickyBanner = S.banner = '🔥 ' + c.props.tag + ' : surcharge du moteur ' + c.props.motor + ' (' + fmt(I, 1) + ' A > Ir ' + Ir + ' A) — déclenchement thermique'; }
+  },
+  press(c) { const s = st(c); if (s.trip && s.heat < 15) { if (Sim.S) Sim.S.stickyBanner = ''; s.trip = false; toast('Relais thermique réarmé'); return true; } if (s.trip) toast('Attendre le refroidissement du bilame'); },
+  hint: c => st(c).trip ? 'Cliquer : réarmer (après refroidissement)' : 'Relais thermique',
+  drawExtra(ctx, c, S, n) { D.rect(ctx, 4, 30, n * 40 - 8, 12); ctx.fillStyle = st(c).trip ? '#dc2626' : '#22c55e'; ctx.fillRect(n * 40 - 12, 64, 8, 8); },
+  probe: c => ({ 'Échauffement du bilame': fmt(Math.min(100, (st(c).heat || 0) / 40 * 100), 0) + ' %', 'État': st(c).trip ? 'DÉCLENCHÉ (95-96 ouvert, 97-98 fermé)' : 'normal' })
+});
+def('motor3', {
+  name: 'Moteur asynchrone triphasé', cat: PCAT, w: 120, h: 120,
+  ports: [P('U', 20, 0, 'e', 'U1'), P('V', 60, 0, 'e', 'V1'), P('W', 100, 0, 'e', 'W1'), P('PE', 120, 80, 'e', 'PE')],
+  defProps: { tag: 'M1', pn: 4, plaque: '230/400', couplage: 'étoile', cos: 0.82, eta: 86, charge: 80 },
+  fields: [TAGF, { k: 'pn', label: 'Puissance utile Pn (kW)', type: 'num', step: 0.25 }, { k: 'plaque', label: 'Tension plaque (V)', type: 'sel', opts: ['230/400', '400/690'] }, { k: 'couplage', label: 'Couplage des enroulements', type: 'sel', opts: ['étoile', 'triangle'], labels: ['Étoile (Y)', 'Triangle (Δ)'] },
+    { k: 'cos', label: 'cos φ', type: 'num', step: 0.01 }, { k: 'eta', label: 'Rendement (%)', type: 'num' }, { k: 'charge', label: 'Charge entraînée (% de Pn)', type: 'num' }, REFF],
+  catalog: [{ ref: 'Moteur 0,75 kW 4 pôles 230/400 V', props: { pn: 0.75, cos: 0.75, eta: 79 } }, { ref: 'Moteur 4 kW 4 pôles 230/400 V', props: { pn: 4, cos: 0.82, eta: 86 } }, { ref: 'Moteur 11 kW 4 pôles 400/690 V', props: { pn: 11, cos: 0.85, eta: 90, plaque: '400/690', couplage: 'triangle' } }],
+  faults: [['surcharge', 'Surcharge mécanique (frottement, blocage partiel)'], ['coil', 'Enroulement coupé (marche en monophasé)'], ['fuite', 'Défaut d\'isolement : fuite à la terre'], ['iso', 'Défaut franc à la masse']],
+  bom: c => 'Moteur asynchrone triphasé ' + c.props.pn + ' kW ' + c.props.plaque + ' V',
+  Ur(c) { const y = c.props.couplage !== 'triangle'; return c.props.plaque === '400/690' ? (y ? 690 : 400) : (y ? 400 : 230); },
+  In(c) { const U = this.Ur(c); return (+c.props.pn || 4) * 1000 / (Math.sqrt(3) * U * (+c.props.cos || 0.82) * ((+c.props.eta || 86) / 100)); },
+  links(c) { return c.fault === 'iso' ? [['U', 'PE']] : []; },
+  loads(c) { if (st(c).burnt) return []; const w = (+c.props.pn || 4) * 1000 / ((+c.props.eta || 86) / 100) / 3; return [['U', 'V', w], ['V', 'W', w], ['W', 'U', w]]; },
+  update(c, S) {
+    const s = st(c), Ur = this.Ur(c), pu = S.Vd(c, 'U'), pv = S.Vd(c, 'V'), pw = c.fault === 'coil' ? null : S.Vd(c, 'W');
+    const d = [dV(pu, pv) || 0, dV(pv, pw) || 0, dV(pw, pu) || 0], ok = d.filter(x => x >= 0.8 * Ur).length, mx = Math.max(...d);
+    let mode = 'off';
+    if (s.burnt) mode = 'off';
+    else if (mx > 1.3 * Ur) { s.burnt = true; S.stickyBanner = S.banner = '💥 ' + c.props.tag + ' : enroulements prévus pour ' + Ur + ' V (couplage ' + c.props.couplage + ') alimentés sous ' + Math.round(mx) + ' V — moteur détruit'; mode = 'off'; }
+    else if (ok === 3) { const a = x => Math.atan2(x.im, x.re) * 180 / Math.PI; let dd = a(pv) - a(pu); dd = ((dd % 360) + 540) % 360 - 180; mode = dd < 0 ? 'fwd' : 'rev'; }
+    else if (d.some(x => x >= 0.8 * Ur)) mode = 'mono';
+    else if (Math.max(...d) > 0.3 * Ur) mode = 'low';
+    if (c.fault === 'fuite' && mode !== 'off') (S.leaks = S.leaks || new Set()).add(S.root(c, 'U'));
+    if (s.mode !== mode) { s.mode = mode; return true; } return false;
+  },
+  step(c, S, dt) {
+    const s = st(c), In = this.In(c), ld = (+c.props.charge || 0) / 100 * (c.fault === 'surcharge' ? 1.8 : 1);
+    const target = s.mode === 'fwd' ? 1 : s.mode === 'rev' ? -1 : 0;
+    s.n = (s.n || 0) + (target * 1500 * (1 - 0.04 * ld) - (s.n || 0)) * Math.min(1, dt * 2.5);
+    s.I = s.mode === 'fwd' || s.mode === 'rev' ? In * (0.35 + 0.65 * ld) * (Math.abs(s.n) < 1200 ? 3 : 1) : s.mode === 'mono' || s.mode === 'low' ? In * 2.2 : 0;
+    s.ang = ((s.ang || 0) + s.n / 60 * dt * 0.2 * Math.PI * 2) % (Math.PI * 2);
+  },
+  draw(ctx, c, S) {
+    const s = st(c); ctx.strokeStyle = INK; ctx.lineWidth = 1.6; [20, 60, 100].forEach(x => D.line(ctx, [x, 0, x, 30 + Math.abs(x - 60) * 0.3]));
+    D.circle(ctx, 60, 68, 40, s.burnt ? '#e5e7eb' : (s.mode === 'fwd' || s.mode === 'rev') ? '#dbeafe' : s.mode === 'mono' || s.mode === 'low' ? '#fee2e2' : '#fff');
+    D.text(ctx, 'M', 60, 60, 18, INK, 'center', true); D.text(ctx, '3~', 60, 82, 12, INK, 'center', true);
+    D.line(ctx, [100, 68, 120, 68, 120, 80]); D.line(ctx, [112, 84, 128, 84]); D.line(ctx, [114, 88, 126, 88]); D.line(ctx, [117, 92, 123, 92]);
+    if (s.n && Math.abs(s.n) > 30) { ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 2; ctx.beginPath(); const a = s.ang || 0; ctx.arc(60, 68, 30, a, a + 1.6 * Math.sign(s.n)); ctx.stroke(); D.text(ctx, s.n > 0 ? '↻' : '↺', 92, 40, 14, '#2563eb'); }
+    if (s.mode === 'mono' && (Date.now() / 150 | 0) % 2) D.text(ctx, '≈', 60, 112, 12, '#dc2626');
+  },
+  probe(c, S) { const s = st(c); return { 'Fonctionnement': { fwd: 'Marche — sens horaire', rev: 'Marche — sens inverse', mono: 'Ne démarre pas : marche en monophasé (phase manquante)', low: 'Sous-tension', off: s.burnt ? 'DÉTRUIT (surtension)' : 'Arrêt' }[s.mode || 'off'], 'Vitesse': fmt(s.n || 0, 0) + ' tr/min', 'Courant absorbé': fmt(s.I || 0, 1) + ' A', 'Courant nominal In': fmt(this.In(c), 1) + ' A', 'Réseau adapté': this.Ur(c) + ' V entre phases (couplage ' + c.props.couplage + ')' }; },
+  plot: c => st(c).I || 0, plotUnit: 'A'
+});
 /* ---------- Connexions ---------- */
 def('node', { name: 'Nœud / jonction', cat: 'Connexions', w: 20, h: 20, ports: [P('n', 10, 10, 'x')], noLabel: true,
   draw(ctx) { ctx.fillStyle = INK; ctx.beginPath(); ctx.arc(10, 10, 3.5, 0, 7); ctx.fill(); } });
@@ -866,6 +1081,7 @@ const PALETTE = [
   ['Appareils de pression', [['relief'], ['relief', 'Limiteur avec mise à vide électrique', { vtag: 'Y0', tag: '0V1' }], ['reducer'], ['seqv'], ['cbv']]],
   ['Appareils fluidiques', [['filter'], ['throttle'], ['throttle', 'Limiteur bidirectionnel', { check: false }], ['check'], ['shuttle'], ['twopress'], ['pswitch']]],
   ['Électrique — commande', [['supply'], ['pb_no'], ['pb_nc'], ['sw_no'], ['estop'], ['coil'], ['k_no'], ['k_nc'], ['coil_t'], ['ls_no'], ['ls_nc'], ['prox'], ['sol'], ['lamp'], ['motor'], ['buzzer']]],
+  ['Électrique — puissance', [['mains3'], ['mains3', 'Réseau triphasé 380 V', { U: '380' }], ['mains1'], ['transfo'], ['psu'], ['breaker'], ['breaker', 'Disjoncteur 1P+N', { poles: 2, In: 10 }], ['rcd'], ['rcd', 'Différentiel 4P 30 mA', { poles: 4 }], ['fuse'], ['kmp'], ['rth'], ['motor3'], ['motor', 'Moteur monophasé 230 V', { vnom: '230', power: 750, tag: 'M2' }], ['lamp', 'Voyant 230 V', { vnom: '230', power: 5 }], ['coil', 'Bobine de contacteur 230 V', { vnom: '230', tag: 'KM1', power: 8 }], ['coil', 'Bobine de contacteur 24 V', { tag: 'KM1', power: 5 }]]],
   ['Automate programmable', [['plc']]],
   ['Électronique numérique', [['lsw'], ['lbtn'], ['clk'], ['and'], ['or'], ['not'], ['nand'], ['nor'], ['xor'], ['rs'], ['dff'], ['cnt'], ['led'], ['seg7']]],
   ['Systèmes virtuels', [['conveyor'], ['traffic']]],

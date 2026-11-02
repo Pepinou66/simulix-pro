@@ -28,8 +28,8 @@ const PLC = {
     const s = st(c); if (!s.img) this.init(c); const img = s.img, P = c.props.prog;
     if (c.fault === 'stop') { img.Q.fill(false); return; }
     for (let i = 0; i < 8; i++) {
-      const v = S.Vd(c, 'I' + i), com = S.Vd(c, 'COM');
-      let on = v != null && com != null && v - com >= 12;
+      const d = dV(S.Vd(c, 'I' + i), S.Vd(c, 'COM'));
+      let on = d != null && d >= 12 && d < 40;
       if (s.hwI[i]) on = true;
       if (s.force['I' + i] != null) on = s.force['I' + i];
       img.I[i] = on;

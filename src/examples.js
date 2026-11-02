@@ -188,6 +188,33 @@ function exHydrostat() {
   o.txt(640, 300, 'Cliquez à droite / à gauche de la pompe pour incliner le plateau (marche avant / arrière).\nStand-by : MA = MB = pression de gavage (25 bar).\nEn marche : la branche HP prend la pression de la charge, l\'autre reste au gavage.\nDéfaillances à tester : moteur bloqué (soupape HP 400 bar),\nzéro de pompe déréglé (dérive au neutre), gavage trop faible.', 0, 13);
   return o;
 }
+function exMotor3() {
+  const o = Proj('Électrique — démarrage direct d\'un moteur triphasé 400 V', ['Circuit de puissance', 'Circuit de commande 24 V']);
+  const R = o.add('mains3', 100, 80, { tag: 'Q0', U: '400' });
+  const Q1 = o.add('breaker', 100, 220, { tag: 'Q1', poles: 3, In: 16, labPos: 'rm' });
+  const KM = o.add('kmp', 100, 360, { tag: 'KM1', poles: 3, labPos: 'rm' });
+  const F2 = o.add('rth', 100, 500, { tag: 'F2', poles: 3, Ir: 8.5, motor: 'M1', labPos: 'rm' });
+  const M = o.add('motor3', 100, 640, { tag: 'M1', pn: 4, plaque: '230/400', couplage: 'étoile', charge: 80, labPos: 'rm' });
+  const T = o.add('transfo', 420, 220, { tag: 'T1', Up: '400', Us: '24', va: 100, labPos: 'rm' });
+  const Qc = o.add('breaker', 420, 360, { tag: 'Q2', poles: 1, In: 2, labPos: 'rm' });
+  const OPa = o.add('offpage', 560, 470, { tag: '24V~' }), OPb = o.add('offpage', 560, 530, { tag: '0V~' });
+  ['0', '1', '2'].forEach((i, k) => { o.w(R, ['L1', 'L2', 'L3'][k], Q1, 'a' + i); o.w(Q1, 'b' + i, KM, 'a' + i); o.w(KM, 'b' + i, F2, 'a' + i); o.w(F2, 'b' + i, M, ['U', 'V', 'W'][k]); });
+  o.w(R, 'PE', M, 'PE', 840);
+  o.w(T, 'P1', Q1, 'b0', 330); o.w(T, 'P2', Q1, 'b1', 340);
+  o.w(T, 'S1', Qc, 'a0'); o.w(Qc, 'b0', OPa, 'n'); o.w(T, 'S2', OPb, 'n');
+  o.txt(600, 640, 'Q1 : disjoncteur moteur — KM1 : contacteur — F2 : relais thermique (Ir 8,5 A)\nM1 : moteur 4 kW 230/400 V couplé en étoile sur réseau 400 V (In ≈ 8,5 A).\nEssayez : couplage triangle sur 400 V, perte de la phase L3, surcharge mécanique.', 0, 13);
+  // ---- Folio 2 : commande
+  const A = o.add('offpage', 140, 80, { tag: '24V~' }, 1), Z = o.add('offpage', 140, 620, { tag: '0V~' }, 1);
+  const F2c = o.add('k_nc', 280, 160, { tag: 'F2', labPos: 'rm' }, 1), S0 = o.add('pb_nc', 280, 260, { tag: 'S0', labPos: 'rm' }, 1), S1 = o.add('pb_no', 280, 360, { tag: 'S1', labPos: 'lm' }, 1);
+  const KA = o.add('k_no', 360, 360, { tag: 'KM1', labPos: 'rm' }, 1), KC = o.add('coil', 280, 480, { tag: 'KM1', vnom: '24', power: 6, labPos: 'rm' }, 1);
+  const K2 = o.add('k_no', 520, 160, { tag: 'KM1', labPos: 'rm' }, 1), H1 = o.add('lamp', 520, 480, { tag: 'H1', color: 'vert', vnom: '24', labPos: 'rm' }, 1);
+  const F2o = o.add('k_no', 660, 160, { tag: 'F2', labPos: 'rm' }, 1), H2 = o.add('lamp', 660, 480, { tag: 'H2', color: 'rouge', vnom: '24', labPos: 'rm' }, 1);
+  o.w(A, 'n', F2c, 'a'); o.w(F2c, 'b', S0, 'a'); o.w(S0, 'b', S1, 'a'); o.w(S1, 'b', KC, 'a'); o.w(KA, 'a', S1, 'a', 340); o.w(KA, 'b', S1, 'b', 440);
+  o.w(F2c, 'a', K2, 'a', 120); o.w(K2, 'a', F2o, 'a', 120); o.w(K2, 'b', H1, 'a'); o.w(F2o, 'b', H2, 'a');
+  o.w(KC, 'b', Z, 'n'); o.w(H1, 'b', KC, 'b', 580); o.w(H2, 'b', H1, 'b', 580);
+  o.txt(820, 300, 'S1 : marche   S0 : arrêt   KM1 : auto-maintien\nF2 (95-96) coupe la commande en cas de surcharge, F2 (97-98) allume H2.\nH1 : moteur en marche.', 1, 13);
+  return o;
+}
 const EXAMPLES = [
   { name: 'Électropneumatique — va-et-vient automatique (2 folios)', build: () => exElectroPneu(false) },
   { name: 'Pneumatique — vérin simple effet', build: exPneuSimple },
@@ -197,6 +224,7 @@ const EXAMPLES = [
   { name: 'Hydraulique — séquence de deux vérins', build: exSeq },
   { name: 'Hydraulique — transmission hydrostatique (circuit fermé)', build: exHydrostat },
   { name: 'Électrique — auto-maintien et temporisation', build: exElec },
+  { name: 'Électrique — démarrage direct moteur triphasé 400 V', build: exMotor3 },
   { name: 'Automate — Ladder marche/arrêt et clignotant', build: exLadder },
   { name: 'Automate — GRAFCET convoyeur', build: exGrafcet },
   { name: 'Électronique numérique — compteur et additionneur', build: exLogic },

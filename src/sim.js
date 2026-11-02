@@ -19,9 +19,18 @@ const Sim = {
     S.root = (c, p) => S.uf.find(K(c, p));
     S.info = (c, p) => S.net.get(S.root(c, p)) || EMPTY;
     S.pre = (c, p) => S.preNet.get(S.uf1.find(K(c, p))) || EMPTY;
+    // Potentiels électriques : {sys, re, im, dc, ph} — sys = réseau/source isolée, re/im = phaseur AC (V eff.), dc = tension continue
     S.Vd = (c, p) => S.vd.get(S.root(c, p)) ?? null;
-    S.V = (c, p) => { const r = S.root(c, p); return S.vd.has(r) ? S.vd.get(r) : (S.vp.get(r) ?? null); };
-    S.loadOn = (c, a, b) => { const va = S.Vd(c, a), vb = S.Vd(c, b); return va != null && vb != null && Math.abs(va - vb) >= 12; };
+    S.pot = (c, p) => { const r = S.root(c, p); return S.vd.get(r) ?? S.vp.get(r) ?? null; };
+    S.dV = (c, a, b, direct) => dV(direct ? S.Vd(c, a) : S.pot(c, a), direct ? S.Vd(c, b) : S.pot(c, b));
+    S.V = (c, p) => { const v = S.pot(c, p); return v ? Math.round(Math.hypot(v.re, v.im) + v.dc) : null; };
+    // charge alimentée si la tension à ses bornes atteint 60 % de sa tension nominale ; grillée au-delà de 140 %
+    S.loadOn = (c, a, b, vn) => {
+      vn = vn || +c.props.vnom || 24; const s = st(c); if (s.burnt) return false;
+      const d = dV(S.Vd(c, a), S.Vd(c, b)); if (d == null) return false;
+      if (d > vn * 1.4) { s.burnt = true; S.stickyBanner = S.banner = '💥 Surtension : ' + (c.props.tag || DEFS[c.type].name) + ' (' + vn + ' V) alimenté sous ' + Math.round(d) + ' V — composant détruit'; return false; }
+      return d >= vn * 0.6;
+    };
     S.vent = (c, p) => S.info(c, p).vent;
     S.netSrc = (c, p) => { const i = S.info(c, p); return i.src && !i.vent; };
     S.netMed = (c, p) => S.info(c, p).med;
@@ -60,8 +69,13 @@ const Sim = {
     S.restr = new Map();
     for (const [k, f] of restr) { const r = uf.find(k); S.restr.set(r, Math.min(S.restr.get(r) ?? 1, f)); }
     // tensions
-    S.vd = new Map(); S.short = null;
-    for (const [r, i] of S.net) { if (i.plus && i.zero) S.short = r; else if (i.plus) S.vd.set(r, 24); else if (i.zero) S.vd.set(r, 0); }
+    S.vd = new Map(); S.short = null; S.shorts = [];
+    for (const [r, i] of S.net) {
+      if (!i.pots || !i.pots.length) continue;
+      const p0 = i.pots[0];
+      if (i.pots.some(q => q.sys === p0.sys && dV(q, p0) > 1)) { S.short = S.short || r; (S.shorts = S.shorts || []).push(r); continue; }
+      S.vd.set(r, p0);
+    }
     // propagation à travers les charges (pour les mesures au voltmètre)
     S.vp = new Map(); S.loadList = [];
     for (const c of comps) { const d = DEFS[c.type]; if (d.loads) for (const [a, b, w] of d.loads(c)) S.loadList.push([c, a, b, w, uf.find(K(c, a)), uf.find(K(c, b))]); }
@@ -69,9 +83,9 @@ const Sim = {
       const cand = new Map();
       const vof = r => S.vd.has(r) ? S.vd.get(r) : S.vp.get(r);
       for (const [, , , , ra, rb] of S.loadList) {
-        for (const [x, y] of [[ra, rb], [rb, ra]]) { if (S.vd.has(y)) continue; const v = vof(x); if (v == null) continue; let s = cand.get(y); if (!s) cand.set(y, s = new Set()); s.add(v); }
+        for (const [x, y] of [[ra, rb], [rb, ra]]) { if (S.vd.has(y)) continue; const v = vof(x); if (v == null) continue; let s = cand.get(y); if (!s) cand.set(y, s = new Map()); s.set(potKey(v), v); }
       }
-      for (const [r, s] of cand) if (s.size === 1) S.vp.set(r, [...s][0]);
+      for (const [r, s] of cand) if (s.size === 1) S.vp.set(r, [...s.values()][0]);
     }
   },
   netInfo(uf) {
@@ -81,8 +95,9 @@ const Sim = {
       const d = DEFS[c.type]; if (!d.sources) continue;
       for (const [p, t, v, q, pl] of d.sources(c, S)) {
         const o = g(uf.find(K(c, p)));
-        if (t === '+') { o.plus = true; o.sup.push(c); }
-        else if (t === '0') { o.zero = true; o.sup.push(c); }
+        if (t === 'pot') { (o.pots = o.pots || []).push(v); o.sup.push(c); if (v.dc > 0 || Math.hypot(v.re, v.im) > 0) o.plus = true; else o.zero = true; }
+        else if (t === '+') { (o.pots = o.pots || []).push({ sys: c.id, re: 0, im: 0, dc: 24, ph: '+' }); o.plus = true; o.sup.push(c); }
+        else if (t === '0') { (o.pots = o.pots || []).push({ sys: c.id, re: 0, im: 0, dc: 0, ph: '0' }); o.zero = true; o.sup.push(c); }
         else if (t === 'pneu') { o.pr = Math.max(o.pr, v); o.src = true; o.med = 'p'; }
         else if (t === 'hyd') { o.pr = Math.max(o.pr, v); o.q += q; o.src = true; o.med = 'h'; o.plage = Math.max(o.plage, pl || 0); }
         else if (t === 'lowp') { o.vent = true; o.med = 'h'; o.lowp = Math.max(o.lowp, v); }
@@ -108,9 +123,15 @@ const Sim = {
     }
   },
   tripShort() {
-    const S = this.S, i = S.net.get(S.short); if (!i) return false; let ch = false;
-    for (const c of i.sup) if (c.type === 'supply' && !S.trip[c.id]) { S.trip[c.id] = 'Court-circuit'; ch = true; }
-    if (ch) { S.banner = '⚡ Court-circuit : protection de l\'alimentation déclenchée'; this.solve(); }
+    const S = this.S; let ch = false;
+    for (const r of S.shorts || []) {
+      const i = S.net.get(r); if (!i) continue;
+      // appareils de protection traversés par le défaut (disjoncteurs, fusibles) : déclenchent en priorité
+      const prot = App.comps.filter(c => DEFS[c.type].protect && compPorts(c).some(p => S.root(c, p.id) === r) && DEFS[c.type].isClosed(c));
+      if (prot.length) { prot.forEach(c => { DEFS[c.type].trip(c, 'Court-circuit'); ch = true; }); S.stickyBanner = S.banner = '⚡ Court-circuit : ' + prot.map(c => c.props.tag).join(', ') + ' a déclenché'; continue; }
+      for (const c of i.sup) if ((c.type === 'supply' || DEFS[c.type].mains) && !S.trip[c.id]) { S.trip[c.id] = 'Court-circuit'; ch = true; S.banner = '⚡ Court-circuit : protection de ' + (c.props.tag || 'l\'alimentation') + ' déclenchée'; }
+    }
+    if (ch) this.solve();
     return ch;
   },
   logic() {
@@ -181,7 +202,7 @@ const Sim = {
   },
   tick(dt = DT) {
     const S = this.S; if (!S) return;
-    S.t += dt; S.banner = Object.keys(S.trip).length ? S.banner : '';
+    S.t += dt; S.banner = Object.keys(S.trip).length ? S.banner : (S.stickyBanner || ''); S.leaks = new Set();
     for (const c of App.comps) { const d = DEFS[c.type]; if (d.scan) d.scan(c, S, dt); }
     Hardware.exchange && Hardware.exchange(S);
     this.solve(); this.settle();
@@ -192,13 +213,14 @@ const Sim = {
     // courants et surcharge
     const cur = new Map();
     for (const [c, a, b, w, ra, rb] of S.loadList) {
-      const va = S.vd.get(ra), vb = S.vd.get(rb);
-      if (va != null && vb != null && Math.abs(va - vb) >= 12) { const r = va > vb ? ra : rb; cur.set(r, (cur.get(r) || 0) + (w || 2) / 24); }
+      const d = dV(S.vd.get(ra), S.vd.get(rb));
+      if (d != null && d >= 10) { const I = (w || 2) / d; for (const r of [ra, rb]) { const i = S.net.get(r); if (i && i.sup) for (const sc of i.sup) cur.set(sc.id, (cur.get(sc.id) || 0) + I / 2); } }
     }
     S.current = {};
-    for (const c of App.comps) if (c.type === 'supply') {
-      const i = cur.get(S.root(c, '+')) || 0; S.current[c.id] = i;
-      if (i > (+c.props.imax || 5) && !S.trip[c.id]) { S.trip[c.id] = 'Surcharge'; S.banner = '⚠ Surcharge : courant ' + fmt(i, 1) + ' A > ' + c.props.imax + ' A — protection déclenchée'; this.solve(); this.settle(); }
+    for (const c of App.comps) if (c.type === 'supply' || DEFS[c.type].mains) {
+      const i = cur.get(c.id) || 0; S.current[c.id] = i;
+      const lim = c.type === 'transfo' ? (+c.props.va || 100) / (+c.props.Us || 24) * 1.5 : (+c.props.imax || 5);
+      if (i > lim && !S.trip[c.id]) { S.trip[c.id] = 'Surcharge'; S.banner = '⚠ Surcharge de ' + (c.props.tag || 'l\'alimentation') + ' : ' + fmt(i, 1) + ' A > ' + fmt(lim, 1) + ' A — protection déclenchée'; this.solve(); this.settle(); }
     }
     // température de l'huile : échauffement par laminage, refroidissement naturel (réservoir, échangeur)
     let lamT = 0; for (const v of S.lam.values()) lamT += v;
@@ -212,5 +234,7 @@ const Sim = {
 
   }
 };
+function dV(a, b) { if (!a || !b || a.sys !== b.sys) return null; return Math.hypot(a.re - b.re, a.im - b.im) + Math.abs(a.dc - b.dc); }
+function potKey(v) { return v.sys + '|' + v.ph + '|' + v.dc + '|' + Math.round(v.re) + '|' + Math.round(v.im); }
 const EMPTY = { plus: false, zero: false, pr: 0, q: 0, vent: false, med: null, src: false, sup: [] };
 const Hardware = {};
