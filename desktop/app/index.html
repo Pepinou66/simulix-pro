@@ -873,9 +873,11 @@ def('hpump', {
   },
   plot: (c, S) => S ? S.P(c, 'P') : 0, plotUnit: 'bar'
 });
-def('tank', { name: 'Retour réservoir', cat: 'Hydraulique', w: 60, h: 40, ports: [P('T', 30, 0, 'h')], noLabel: true,
+def('tank', { name: 'Réservoir (retour / aspiration)', cat: 'Hydraulique', w: 60, h: 40, ports: [P('T', 30, 0, 'h', 'réservoir')], noLabel: true,
+  defProps: { use: 'auto' }, fields: [{ k: 'use', label: 'Utilisation', type: 'sel', opts: ['auto', 'retour', 'aspiration'], labels: ['Automatique (selon le raccordement)', 'Retour au réservoir (au-dessus du niveau)', 'Aspiration de pompe (plongeant sous le niveau)'] }],
   sources() { return [['T', 'tank']]; },
-  draw(ctx) { ctx.strokeStyle = INK; ctx.lineWidth = 1.6; D.line(ctx, [30, 0, 30, 30]); D.line(ctx, [8, 18, 8, 34, 52, 34, 52, 18]); } });
+  suction(c) { if (c.props.use === 'retour') return false; if (c.props.use === 'aspiration') return true; return App.wires.some(w => [[w.a, w.b], [w.b, w.a]].some(([m, o]) => m.c === c.id && ['hpump', 'pumpvar'].includes(App.byId(o.c)?.type) && ['S', 'T'].includes(o.p))); },
+  draw(ctx, c) { ctx.strokeStyle = INK; ctx.lineWidth = 1.6; const sc = c && this.suction(c); D.line(ctx, [30, 0, 30, sc ? 31 : 22]); D.line(ctx, [8, 14, 8, 34, 52, 34, 52, 14]); D.dash(ctx, 1); D.line(ctx, [10, 26, 50, 26]); D.dash(ctx, 0); } });
 
 /* ---------- Distributeurs ---------- */
 const VT = {
