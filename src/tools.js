@@ -360,6 +360,7 @@ const Updates = {
     const dlg = $('#dlg'); dlg.className = 'dlg sm';
     dlg.innerHTML = `<header><h2>Mises à jour</h2><button class="btn" id="updClose">Fermer</button></header><div class="body" id="updBody"></div>`;
     $('#modal').classList.add('open'); $('#updClose').onclick = () => $('#modal').classList.remove('open');
+    if (NATIVE && NATIVE.mobileUpdate) { $('#updBody').innerHTML = '<p>Version installée : <b>' + esc(SIMULIX_VERSION) + '</b></p><p class="hint">L\'application vérifie les mises à jour au démarrage (GitHub Releases).</p><div class="btns"><button class="btn pri" id="updMob">Rechercher maintenant</button></div>'; $('#updMob').onclick = () => NATIVE.mobileUpdate(true); return; }
     if (!NATIVE || !NATIVE.updates) { $('#updBody').innerHTML = '<p class="hint">Les mises à jour automatiques sont disponibles dans l\'application de bureau Simulix Pro installée sur Windows.</p>'; return; }
     NATIVE.updates.get().then(st => { this.st = st; this.renderBody(); });
   },
@@ -425,6 +426,15 @@ function initUI() {
   $('#modal').addEventListener('pointerdown', e => { if (e.target.id === 'modal' && !PE.c) $('#modal').classList.remove('open'); });
   new ResizeObserver(() => View.resize()).observe($('#center'));
   if (NATIVE && NATIVE.onMenu) NATIVE.onMenu(cmd => ({ new: () => Files.newProject(), open: () => Files.open(), save: () => Files.save(), pdf: () => Files.exportPDF(), png: () => Files.exportPNG(), run: () => Ctl.run(), stop: () => Ctl.stop(), help, eng: () => Eng.open(), updates: () => Updates.open() })[cmd]?.());
+  // barre d'actions mobile (écran étroit) : relaie les boutons de la barre d'outils
+  { const cl = id => () => { const b = $(id); if (b && !b.disabled) b.click(); };
+    $('#mPal').onclick = cl('#bPal'); $('#mUndo').onclick = cl('#bUndo'); $('#mDel').onclick = cl('#bDel'); $('#mProps').onclick = cl('#bProps');
+    $('#mRun').onclick = () => Sim.S ? $('#bStop').click() : $('#bRun').click();
+    $('#mPause').onclick = () => App.running ? $('#bPause').click() : $('#bRun').click();
+    if (innerWidth < 900) $('#pzLeg').classList.add('mini'); $('#pzT').onclick = () => $('#pzLeg').classList.toggle('mini');
+    $('#mMore').onclick = e => { e.stopPropagation(); document.body.classList.toggle('topopen'); };
+    $('#top').addEventListener('click', e => { if (document.body.classList.contains('topopen') && e.target.closest('button,select') && e.target.id !== 'selLang' && e.target.id !== 'selEx' && e.target.id !== 'selSpeed' && e.target.id !== 'selView') document.body.classList.remove('topopen'); });
+    document.addEventListener('pointerdown', e => { if (document.body.classList.contains('topopen') && !e.target.closest('#top,#mbar')) document.body.classList.remove('topopen'); }); }
   Updates.init();
   if (NATIVE && NATIVE.onOpenFile) NATIVE.onOpenFile(t => Files.loadText(t));
   View2.init();

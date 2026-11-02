@@ -1,0 +1,7 @@
+{
+  "appId": "fr.simulix.pro",
+  "appName": "Simulix Pro",
+  "webDir": "www",
+  "android": { "allowMixedContent": false },
+  "server": { "androidScheme": "https" }
+}

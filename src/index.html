@@ -2,7 +2,14 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#151b26">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Simulix Pro">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
 <title>Simulix Pro — Conception et simulation de systèmes automatisés</title>
 <style>
 :root{
@@ -137,6 +144,25 @@ table.grid td input:focus{border-color:var(--accent);outline:none}
 #zoomctl{position:absolute;right:8px;bottom:36px;display:flex;flex-direction:column;gap:4px;z-index:3}
 #zoomctl button{width:32px;height:32px;border-radius:8px;border:1px solid var(--line);background:#fff;font-size:16px}
 .mobbtn{display:none}
+#mbar{display:none}
+@media (max-width:900px){
+  #app{grid-template-rows:var(--top) 1fr auto auto}
+  #mbar{display:flex;justify-content:space-around;align-items:stretch;background:#151b26;padding:4px 2px calc(4px + env(safe-area-inset-bottom));gap:2px}
+  #mbar button{flex:1;background:transparent;border:0;color:#dfe6f0;font-size:11px;display:flex;flex-direction:column;align-items:center;gap:1px;padding:4px 0;border-radius:8px;min-height:46px;justify-content:center}
+  #mbar button b{font-size:19px;font-weight:400;line-height:1}
+  #mbar button:active{background:#263044}
+  #mbar button.run{color:#4ade80}#mbar button.stop{color:#f87171}
+  #mbar button:disabled{opacity:.35}
+  #top{padding-top:env(safe-area-inset-top)}
+  body.topopen #app{grid-template-rows:auto 1fr auto auto}
+  body.topopen #top{height:auto;flex-wrap:wrap;white-space:normal;padding:8px;gap:6px}
+  body.topopen #top .hidem{display:inline}
+  #ghLink{display:none}
+  .tb{padding:8px 10px}
+  #pzLeg{font-size:10px;max-width:60vw;bottom:auto;top:44px}
+  #pzLeg.mini span,#pzLeg.mini label{display:none}
+  #pzLeg b{cursor:pointer}
+}
 @media (max-width:900px){
   #main{grid-template-columns:1fr}
   #palette,#props{position:absolute;top:0;bottom:0;z-index:20;width:min(300px,86vw);box-shadow:0 0 30px rgba(0,0,0,.25);display:none}
@@ -194,7 +220,7 @@ table.grid td input:focus{border-color:var(--accent);outline:none}
       <div id="views"><canvas id="cv"></canvas><div id="pane2" class="pane2"><div class="p2h"><span class="p2t">Folio</span><select id="p2sel"></select><button id="p2fit" title="Ajuster">⤢</button><button id="p2close" title="Fermer">✕</button></div><canvas id="cv2"></canvas></div></div>
       <div id="modeTag">Édition</div>
       <div id="banner"></div>
-      <div id="pzLeg"><b>Pressions</b><span data-m="h"><i style="background:#dc2626"></i>HP — haute pression (&gt; 30 bar)</span><span data-m="h"><i style="background:#f59e0b"></i>BP — basse pression (gavage, pilotage, contre-pression)</span><span data-m="h"><i style="background:#2563eb"></i>R — retour réservoir</span><span data-m="p"><i style="background:#1677ff"></i>Air comprimé</span><span data-m="p"><i style="background:#93c5fd"></i>Échappement</span><span><i style="background:#64748b"></i>Sans pression</span><label><input type="checkbox" id="pzLab" checked> Étiquettes sur le schéma</label></div>
+      <div id="pzLeg"><b id="pzT">Pressions ▾</b><span data-m="h"><i style="background:#dc2626"></i>HP — haute pression (&gt; 30 bar)</span><span data-m="h"><i style="background:#f59e0b"></i>BP — basse pression (gavage, pilotage, contre-pression)</span><span data-m="h"><i style="background:#2563eb"></i>R — retour réservoir</span><span data-m="p"><i style="background:#1677ff"></i>Air comprimé</span><span data-m="p"><i style="background:#93c5fd"></i>Échappement</span><span><i style="background:#64748b"></i>Sans pression</span><label><input type="checkbox" id="pzLab" checked> Étiquettes sur le schéma</label></div>
       <div id="tip"></div>
       <div id="zoomctl"><button id="zIn">+</button><button id="zOut">−</button><button id="zFit" title="Ajuster">⤢</button></div>
       <div id="sheets"></div>
@@ -203,6 +229,7 @@ table.grid td input:focus{border-color:var(--accent);outline:none}
     <div id="props"></div>
   </div>
   <div id="plot"><canvas id="plotc"></canvas><div id="plotbar"><button id="plotClr">Effacer canaux</button><button id="plotClose">✕</button></div></div>
+  <div id="mbar"><button id="mPal"><b>☰</b>Biblio</button><button id="mUndo"><b>↶</b>Annuler</button><button id="mRun" class="run"><b>▶</b>Simuler</button><button id="mPause" disabled><b>⏸</b>Pause</button><button id="mDel"><b>🗑</b>Supprimer</button><button id="mProps"><b>⚙</b>Réglages</button><button id="mMore"><b>⋯</b>Plus</button></div>
 </div>
 <div class="modal" id="modal"><div class="dlg" id="dlg"></div></div>
 <div id="toast"></div>
@@ -212,6 +239,7 @@ table.grid td input:focus{border-color:var(--accent);outline:none}
 <input type="file" id="fileIn" accept=".sxp,.json,application/json" style="display:none">
 <!--SCRIPTS-->
 <script src="util.js"></script>
+<script src="mobile.js"></script>
 <script src="i18n.js"></script>
 <script src="lang_en.js"></script>
 <script src="comps.js"></script>

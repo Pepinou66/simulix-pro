@@ -332,8 +332,14 @@ function hoverBox(c) { // boîte de survol : encombrement + zone animée éventu
   d.extraRects(c).forEach(r => [toW(r.x, r.y), toW(r.x + r.w, r.y + r.h)].forEach(q => { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y); }));
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
-function hitPort(p) { const r = 9 / Math.max(App.view.s, .5); let best = null, bd = r; for (const c of App.sheetComps()) for (const q of compPorts(c)) { const w = portWorld(c, q), d = Math.hypot(w.x - p.x, w.y - p.y); if (d < bd) { bd = d; best = { c, p: q }; } } return best; }
+let touchMode = false;
+function hitPort(p) { const r = (touchMode ? 18 : 9) / Math.max(App.view.s, .5); let best = null, bd = r; for (const c of App.sheetComps()) for (const q of compPorts(c)) { const w = portWorld(c, q), d = Math.hypot(w.x - p.x, w.y - p.y); if (d < bd) { bd = d; best = { c, p: q }; } } return best; }
 function hitWire(p, px = 6) { const tol = px / App.view.s, ids = new Set(App.sheetComps().map(c => c.id)); for (const w of App.wires) { if (!ids.has(w.a.c)) continue; const wp = wirePts(w); if (!wp) continue; for (let i = 0; i < wp.pts.length - 1; i++) if (distSeg(p, wp.pts[i], wp.pts[i + 1]) < tol) return w; } return null; }
+let lpTimer = null; // appui long (écran tactile) = menu contextuel
+cv.addEventListener('pointerdown', e => { touchMode = e.pointerType === 'touch'; clearTimeout(lpTimer); if (touchMode) { const sx = e.clientX, sy = e.clientY, ox = e.offsetX, oy = e.offsetY; lpTimer = setTimeout(() => { if (ptrs.size > 1) return; if (drag && drag.moved) return; if (drag && drag.mode === 'pan' && drag.lpx != null) return; drag = null; ptrs.clear(); if (navigator.vibrate) navigator.vibrate(15); Ctx.open(sx, sy, View.toWorld(ox, oy)); }, 550); } }, true);
+cv.addEventListener('pointermove', e => { if (lpTimer && e.pointerType === 'touch' && drag && (drag.moved || (drag.mode === 'pan' && Math.hypot(e.offsetX - drag.sx, e.offsetY - drag.sy) > 8))) { clearTimeout(lpTimer); lpTimer = null; } }, true);
+cv.addEventListener('pointerup', () => { clearTimeout(lpTimer); lpTimer = null; }, true);
+cv.addEventListener('pointercancel', () => { clearTimeout(lpTimer); lpTimer = null; }, true);
 cv.addEventListener('pointerdown', e => {
   cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
   if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 }; drag = null; rubber = null; return; }
@@ -808,6 +814,7 @@ const Ctl = {
     const sim = !!Sim.S;
     $('#bRun').disabled = App.running; $('#bPause').disabled = !App.running; $('#bStep').disabled = App.running; $('#bStop').disabled = !sim;
     ['#bUndo', '#bRedo', '#bRot', '#bDup', '#bDel', '#bNew', '#bOpen'].forEach(s => $(s).disabled = sim);
+    { const r = $('#mRun'); if (r) { r.className = sim ? 'stop' : 'run'; r.innerHTML = sim ? '<b>⏹</b>' + I18N.tr('Arrêter') : '<b>▶</b>' + I18N.tr('Simuler'); $('#mPause').disabled = !sim; $('#mPause').innerHTML = App.running || !sim ? '<b>⏸</b>' + I18N.tr('Pause') : '<b>▶</b>' + I18N.tr('Reprendre'); $('#mUndo').disabled = sim; $('#mDel').disabled = sim; } }
     { const hasH = App.wires.some(w => w.kind === 'h'), hasP = App.wires.some(w => w.kind === 'p'); $('#pzLeg').style.display = sim && (hasH || hasP) ? 'flex' : 'none'; document.querySelectorAll('#pzLeg [data-m]').forEach(e => e.style.display = (e.dataset.m === 'h' ? hasH : hasP) ? '' : 'none'); }
     $('#modeTag').textContent = sim ? (App.running ? '● Simulation en cours' : '❚❚ Simulation en pause') : 'Édition';
     $('#modeTag').style.color = sim ? '#15803d' : '';

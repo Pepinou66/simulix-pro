@@ -810,6 +810,13 @@
   "CASSÉE (surpression)": "BROKEN (overpressure)",
   "bon": "good",
   "ÉCLATÉ (surpression)": "BURST (overpressure)",
-  "Réparer / remplacer": "Repair / replace"
+  "Réparer / remplacer": "Repair / replace",
+  "Pressions ▾": "Pressures ▾",
+  "Annuler": "Undo",
+  "Reprendre": "Resume",
+  "Supprimer": "Delete",
+  "Réglages": "Settings",
+  "Plus": "More",
+  "Biblio": "Library"
  }
 }
