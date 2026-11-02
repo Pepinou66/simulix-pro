@@ -87,7 +87,7 @@ const Eng = {
   },
   bom(B) {
     const groups = new Map();
-    App.comps.forEach(c => { const d = DEFS[c.type]; if (!d.bom || c.type === 'text' || c.type === 'node') return; const des = typeof d.bom === 'function' ? d.bom(c) : d.bom; const key = des + '|' + (c.props.ref || ''); const g = groups.get(key) || { des, ref: c.props.ref || '', tags: [], n: 0, tech: d.cat || (c.props.medium === 'hyd' ? 'Hydraulique' : 'Pneumatique') }; g.tags.push(c.props.tag || ''); g.n++; groups.set(key, g); });
+    App.comps.forEach(c => { const d = DEFS[c.type]; if (!d.bom || c.type === 'text' || c.type === 'node' || (d.noBom && d.noBom(c))) return; const des = typeof d.bom === 'function' ? d.bom(c) : d.bom; const key = des + '|' + (c.props.ref || ''); const g = groups.get(key) || { des, ref: c.props.ref || '', tags: [], n: 0, tech: d.cat || (c.props.medium === 'hyd' ? 'Hydraulique' : 'Pneumatique') }; g.tags.push(c.props.tag || ''); g.n++; groups.set(key, g); });
     App.wires.filter(w => w.ref).forEach(w => { const fl = w.kind !== 'e' && w.kind !== 'l' && w.kind !== 'x'; const des = fl ? 'Flexible / conduite ' + (w.kind === 'h' ? 'hydraulique' : 'pneumatique') : 'Fil / câble'; const key = des + '|' + w.ref; const g = groups.get(key) || { des, ref: w.ref, tags: [], n: 0, tech: fl ? 'Liaisons fluidiques' : 'Liaisons électriques' }; g.tags.push(w.name || ''); g.n++; groups.set(key, g); });
     const head = ['Pos.', 'Qté', 'Désignation', 'Référence', 'Repères', 'Technologie'];
     const rows = [...groups.values()].sort((a, b) => a.tech.localeCompare(b.tech) || a.des.localeCompare(b.des)).map((g, i) => [i + 1, g.n, esc(g.des), esc(g.ref), esc(g.tags.filter(Boolean).join(', ')), esc(g.tech)]);

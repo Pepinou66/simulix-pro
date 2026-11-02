@@ -276,8 +276,8 @@ function drawScene(g, S, ui) {
   }
   // nœuds de jonction automatiques (≥3 fils sur un même port)
   const cnt = new Map(); App.wires.forEach(w => [w.a, w.b].forEach(r => { const k = r.c + ':' + r.p; cnt.set(k, (cnt.get(k) || 0) + 1); }));
-  // composants
-  for (const c of comps) {
+  // composants (les cadres d'abord, en dessous)
+  for (const c of [...comps.filter(c => DEFS[c.type].isFrame), ...comps.filter(c => !DEFS[c.type].isFrame)]) {
     const d = DEFS[c.type], { w, h } = compSize(c);
     g.save(); g.translate(c.x + w / 2, c.y + h / 2); g.rotate((c.rot || 0) * Math.PI / 2); g.translate(-w / 2, -h / 2);
     g.strokeStyle = INK; g.lineWidth = 1.6; g.lineCap = 'butt';
@@ -286,6 +286,7 @@ function drawScene(g, S, ui) {
     const b = compBBox(c);
     drawLabel(g, c, b, ui && !S);
     if (ui && S && App.hover === c.id && d.press) { const pr = drag && drag.mode === 'press' && drag.c === c, b = hoverBox(c); g.save(); g.fillStyle = pr ? 'rgba(245,158,11,.16)' : 'rgba(15,98,254,.07)'; g.strokeStyle = pr ? 'rgba(245,158,11,.9)' : 'rgba(15,98,254,.45)'; g.lineWidth = 1.5 / v.s; g.beginPath(); g.roundRect(b.x - 6, b.y - 6, b.w + 12, b.h + 12, 8); g.fill(); g.stroke(); g.restore(); }
+    if (ui && !S && App.sel.has(c.id) && d.isFrame) { g.fillStyle = '#0f62fe'; const hs = 7 / v.s; g.fillRect(b.x + b.w - hs / 2, b.y + b.h - hs / 2, hs, hs); }
     if (ui && !S && App.sel.has(c.id)) { g.strokeStyle = '#0f62fe'; g.lineWidth = 1.5 / v.s; g.setLineDash([4 / v.s, 3 / v.s]); g.strokeRect(b.x - 5, b.y - 5, b.w + 10, b.h + 10); g.setLineDash([]); }
     if (ui && c.fault && !App.hideFaults) { const r = clamp(9 / v.s, 7, 22), x = b.x + b.w + r * .6, y = b.y - r * .6; g.save(); g.fillStyle = '#dc2626'; g.strokeStyle = '#fff'; g.lineWidth = 2 / v.s; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); g.stroke(); D.text(g, '!', x, y + r * .05, r * 1.45, '#fff', 'center', true); g.restore(); badges.push({ c, x, y, r }); }
     if (S && c.state && c.state.burnt) { D.text(g, '💥', b.x + b.w / 2, b.y + b.h / 2, 22, '#111'); }
@@ -311,9 +312,15 @@ function wireNumbers() {
 
 /* ===================== INTERACTION ===================== */
 const ptrs = new Map(); let drag = null, lastTap = { t: 0, id: null }, pinch = null;
+function frameHit(c, p) { // un cadre ne se saisit que par son bord ou son titre : les composants à l'intérieur restent cliquables
+  const b = compBBox(c), t = 6 / App.view.s, inX = p.x >= b.x - t && p.x <= b.x + b.w + t, inY = p.y >= b.y - t && p.y <= b.y + b.h + t;
+  if (!inX || !inY) return false; if (p.x - b.x < 150 && p.y - b.y < 18 && p.y >= b.y - t) return true;
+  return Math.abs(p.x - b.x) < t || Math.abs(p.x - b.x - b.w) < t || Math.abs(p.y - b.y) < t || Math.abs(p.y - b.y - b.h) < t;
+}
 function hitComp(p) {
   const cs = App.sheetComps();
-  for (let i = cs.length - 1; i >= 0; i--) { const c = cs[i], b = compBBox(c); if (p.x >= b.x - 2 && p.x <= b.x + b.w + 2 && p.y >= b.y - 2 && p.y <= b.y + b.h + 2) return c; }
+  for (let i = cs.length - 1; i >= 0; i--) { const c = cs[i]; if (DEFS[c.type].isFrame) continue; const b = compBBox(c); if (p.x >= b.x - 2 && p.x <= b.x + b.w + 2 && p.y >= b.y - 2 && p.y <= b.y + b.h + 2) return c; }
+  for (let i = cs.length - 1; i >= 0; i--) { const c = cs[i]; if (DEFS[c.type].isFrame && frameHit(c, p)) return c; }
   if (Sim.S) for (let i = cs.length - 1; i >= 0; i--) { const c = cs[i], d = DEFS[c.type]; if (!d.extraRects) continue; const l = toLocal(c, p.x, p.y); if (d.extraRects(c).some(r => l.x >= r.x && l.x <= r.x + r.w && l.y >= r.y && l.y <= r.y + r.h)) return c; }
   return null;
 }
@@ -371,6 +378,10 @@ cv.addEventListener('pointerdown', e => {
   { // un segment de liaison passant au-dessus d'un composant reste saisissable (sauf les petits départs collés aux orifices)
     const wq = App.tool !== 'pan' && hitWire(p, 4); if (wq) { const j = wireSegAt(wq, p), n = wirePts(wq).pts.length; if (j > 0 && j < n - 2) { const was = App.selWire === wq.id; App.selWire = wq.id; App.sel.clear(); Props.render(); drag = { mode: 'wire', w: wq, j, p0: p, moved: false, was }; return; } }
   }
+  { // poignée de redimensionnement d'un cadre sélectionné (coin bas-droit)
+    const t = 8 / App.view.s, f = App.sheetComps().find(o => DEFS[o.type].isFrame && App.sel.has(o.id) && (() => { const b = compBBox(o); return Math.abs(p.x - b.x - b.w) < t && Math.abs(p.y - b.y - b.h) < t; })());
+    if (f && App.tool !== 'pan') { drag = { mode: 'fresize', c: f, p0: p, w0: +f.props.fw || 200, h0: +f.props.fh || 140, odd: (f.rot || 0) % 2, moved: false }; return; }
+  }
   const c = hitComp(p);
   if (c && App.tool !== 'pan') {
     const dbl = lastTap.id === c.id && now - lastTap.t < 350; lastTap = { t: now, id: c.id };
@@ -378,7 +389,8 @@ cv.addEventListener('pointerdown', e => {
     if (e.shiftKey || e.ctrlKey) { App.sel.has(c.id) ? App.sel.delete(c.id) : App.sel.add(c.id); }
     else if (!App.sel.has(c.id)) App.sel = new Set([c.id]);
     App.selWire = null; Props.render();
-    drag = { mode: 'move', p0: p, orig: [...App.sel].map(id => { const o = App.byId(id); return [o, o.x, o.y]; }), wr: App.wires.filter(w => w.route && App.sel.has(w.a.c) && App.sel.has(w.b.c)).map(w => [w, { o: w.route.o, v: [...w.route.v] }]), moved: false };
+    const inside = new Set(App.sel); [...App.sel].forEach(id => { const f = App.byId(id); if (f && DEFS[f.type].isFrame && f.props.carry !== false) { const fb = compBBox(f); App.sheetComps().forEach(o => { if (o === f) return; const ob = compBBox(o); if (ob.x >= fb.x - 1 && ob.y >= fb.y - 1 && ob.x + ob.w <= fb.x + fb.w + 1 && ob.y + ob.h <= fb.y + fb.h + 1) inside.add(o.id); }); } });
+    drag = { mode: 'move', p0: p, orig: [...inside].map(id => { const o = App.byId(id); return [o, o.x, o.y]; }), wr: App.wires.filter(w => w.route && inside.has(w.a.c) && inside.has(w.b.c)).map(w => [w, { o: w.route.o, v: [...w.route.v] }]), moved: false };
     return;
   }
   const w = App.tool !== 'pan' && hitWire(p);
@@ -426,6 +438,7 @@ cv.addEventListener('pointermove', e => {
   if (!drag) hover(p, e);
   if (!drag) return;
   if (drag.mode === 'pan') { App.view.ox = drag.ox + e.offsetX - drag.sx; App.view.oy = drag.oy + e.offsetY - drag.sy; }
+  if (drag.mode === 'fresize') { const c = drag.c, dx = p.x - drag.p0.x, dy = p.y - drag.p0.y, x0 = c.x + (+c.props.fw) / 2, y0 = c.y + (+c.props.fh) / 2; const w = Math.max(20, snap(drag.w0 + (drag.odd ? dy : dx))), h = Math.max(20, snap(drag.h0 + (drag.odd ? dx : dy))); const b0 = compBBox(c); c.props.fw = w; c.props.fh = h; const b1 = compBBox(c); c.x += b0.x - b1.x; c.y += b0.y - b1.y; drag.moved = true; return; }
   if (drag.mode === 'move') { const dx = p.x - drag.p0.x, dy = p.y - drag.p0.y; if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true; if (drag.moved) { drag.orig.forEach(([o, x, y]) => { o.x = snap(x + dx); o.y = snap(y + dy); }); const [o0, x0, y0] = drag.orig[0] || []; if (o0) (drag.wr || []).forEach(([w, r]) => { w.route = shiftRoute(r, o0.x - x0, o0.y - y0); }); } }
   if (drag.mode === 'label') { const dx = p.x - drag.p0.x, dy = p.y - drag.p0.y; if (Math.abs(dx) + Math.abs(dy) > 2) { drag.moved = true; drag.c.props.labPos = 'free'; drag.c.props.labDx = Math.round(drag.dx0 + dx); drag.c.props.labDy = Math.round(drag.dy0 + dy); } }
   if (drag.mode === 'wire') {
@@ -462,6 +475,7 @@ function hover(p, e) {
     hoverPort = hitPort(p); const c = hitComp(p);
     const onLab = !hoverPort && labelRects.some(r => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h);
     cur = hoverPort ? 'crosshair' : App.placing ? 'copy' : onLab ? 'grab' : (c ? 'move' : 'default');
+    { const t = 8 / App.view.s; if (App.sheetComps().some(o => DEFS[o.type].isFrame && App.sel.has(o.id) && (() => { const b = compBBox(o); return Math.abs(p.x - b.x - b.w) < t && Math.abs(p.y - b.y - b.h) < t; })())) { cur = 'nwse-resize'; tip = 'Glisser pour redimensionner le cadre'; } }
     if (onLab) tip = 'Glisser pour déplacer le repère librement';
     if (hoverPort) tip = esc(hoverPort.p.label || hoverPort.p.id) + ' · ' + kname(hoverPort.p.k);
   }
@@ -473,6 +487,7 @@ function endPtr(e) {
   if (!drag) return;
   if (drag.mode === 'pan' && drag.desel && Math.hypot(e.offsetX - drag.sx, e.offsetY - drag.sy) < 5 && (App.selWire || App.sel.size)) { App.selWire = null; App.sel.clear(); Props.render(); }
   if (drag.mode === 'press') { const d = DEFS[drag.c.type]; if (d.release && d.release(drag.c)) Sim.settleNow(); }
+  if (drag.mode === 'fresize' && drag.moved) { App.changed(); }
   if (drag.mode === 'move' && drag.moved) {
     if (drag.orig.length === 1 && drag.orig[0][0].type === 'node') { // nœud lâché sur une liaison : il s'y raccorde
       const nd = drag.orig[0][0], pc = portWorld(nd, compPorts(nd)[0]);
@@ -654,6 +669,7 @@ const Props = {
       if (f.when && !f.when(c)) return; const v = c.props[f.k] ?? '';
       if (f.type === 'sel') h += `<div class="row"><label>${esc(f.label)}</label><select data-k="${f.k}">${f.opts.map((o, i) => `<option value="${esc(o)}" ${String(v) === String(o) ? 'selected' : ''}>${esc(f.labels ? f.labels[i] : o)}</option>`).join('')}</select></div>`;
       else if (f.type === 'chk') h += `<div class="row chk"><input type="checkbox" data-k="${f.k}" ${v ? 'checked' : ''}><label>${esc(f.label)}</label></div>`;
+      else if (f.type === 'color') h += `<div class="row"><label>${esc(f.label)}</label><input type="color" data-k="${f.k}" value="${esc(v || '#475569')}" style="width:60px;height:30px;padding:1px"></div>`;
       else if (f.type === 'textarea') h += `<div class="row"><label>${esc(f.label)}</label><textarea data-k="${f.k}" rows="3">${esc(v)}</textarea></div>`;
       else if (f.type === 'range') h += `<div class="row"><label>${esc(f.label)} : <b id="rv_${f.k}">${esc(v)}</b></label><input type="range" min="0" max="100" data-k="${f.k}" value="${esc(v)}"></div>`;
       else h += `<div class="row"><label>${esc(f.label)}</label><input data-k="${f.k}" ${f.type === 'num' ? `type="number" step="${f.step || 1}"` : ''} value="${esc(v)}"></div>`;
@@ -675,7 +691,7 @@ const Props = {
       const apply = () => {
         let v = inp.type === 'checkbox' ? inp.checked : inp.value; if (f && (f.type === 'num' || f.type === 'range')) v = +v;
         c.props[inp.dataset.k] = v; if (f.type === 'range') { const b = $('#rv_' + f.k); if (b) b.textContent = v; }
-        if (['vt', 'aL', 'aR', 'xL', 'xR', 'single', 'medium'].includes(inp.dataset.k)) { App.pruneWires(); App.changed(); return Props.render(); }
+        if (['vt', 'aL', 'aR', 'xL', 'xR', 'single', 'medium', 'kind'].includes(inp.dataset.k)) { App.pruneWires(); App.changed(); return Props.render(); }
         App.changed(); if (Sim.S) Sim.indexCyl();
       };
       inp.onchange = apply; if (f && f.type === 'range') inp.oninput = () => { c.props[f.k] = +inp.value; const b = $('#rv_' + f.k); if (b) b.textContent = inp.value; };

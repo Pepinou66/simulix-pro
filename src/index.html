@@ -159,7 +159,7 @@ table.grid td input:focus{border-color:var(--accent);outline:none}
 <body>
 <div id="app">
   <div id="top">
-    <div id="brand"><b>Simulix</b><small>PRO</small><a id="ghLink" href="https://github.com/Pepinou66/simulix-pro" target="_blank" rel="noopener" title="Code source sur GitHub (logiciel libre GPL-3.0)" style="color:#93a4bd;text-decoration:none;font-size:11px;border:1px solid #3a4558;border-radius:4px;padding:1px 6px;font-weight:500">⌥ GitHub</a></div>
+    <div id="brand"><b>Simulix</b><small>PRO</small><a id="ghLink" href="https://github.com/Pepinou66/simulix-pro" target="_blank" rel="noopener" title="Code source sur GitHub (logiciel libre GPL-3.0)" style="color:#93a4bd;text-decoration:none;font-size:11px;border:1px solid #3a4558;border-radius:4px;padding:1px 6px;font-weight:500">⌥ GitHub</a><select id="selLang" data-noi18n title="Langue / Language" style="background:#1f2937;color:#cbd5e1;border:1px solid #3a4558;border-radius:4px;font-size:11px;padding:1px 2px;max-width:120px"></select><input type="file" id="langIn" accept=".json,application/json" hidden></div>
     <button class="tb mobbtn" id="bPal" title="Bibliothèque">☰ Biblio</button>
     <button class="tb" id="bNew" title="Nouveau projet">🗋<span class="hidem"> Nouveau</span></button>
     <button class="tb" id="bOpen" title="Ouvrir un projet (.sxp/.json)">📂<span class="hidem"> Ouvrir</span></button>
@@ -212,13 +212,15 @@ table.grid td input:focus{border-color:var(--accent);outline:none}
 <input type="file" id="fileIn" accept=".sxp,.json,application/json" style="display:none">
 <!--SCRIPTS-->
 <script src="util.js"></script>
+<script src="i18n.js"></script>
+<script src="lang_en.js"></script>
 <script src="comps.js"></script>
 <script src="sim.js"></script>
 <script src="plc.js"></script>
 <script src="core.js"></script>
 <script src="tools.js"></script>
 <script src="examples.js"></script>
-<script>initUI();</script>
+<script>initUI(); I18N.start();</script>
 <!--/SCRIPTS-->
 </body>
 </html>

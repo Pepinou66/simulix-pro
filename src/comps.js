@@ -423,6 +423,34 @@ def('offpage', {
   fields: [{ k: 'tag', label: 'Nom du renvoi (relie les renvois identiques)', type: 'text' }],
   draw(ctx, c) { ctx.strokeStyle = INK; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(0, 20); ctx.lineTo(10, 8); ctx.lineTo(56, 8); ctx.lineTo(56, 32); ctx.lineTo(10, 32); ctx.closePath(); ctx.fillStyle = '#fff7ed'; ctx.fill(); ctx.stroke(); ctx.save(); ctx.translate(33, 20); ctx.rotate(-(c.rot || 0) * Math.PI / 2); D.text(ctx, c.props.tag, 0, 0, 10, INK, 'center', true); ctx.restore(); }
 });
+/* Cadre : encadrement libre, bloc foré (embase) ou cartouche hydraulique vissée dans le bloc */
+const FDASH = { continu: [], court: [4, 3], moyen: [9, 5], long: [18, 7], mixte: [18, 4, 2, 4], mixte2: [18, 4, 2, 4, 2, 4], points: [1.5, 3.5] };
+const FKIND = { libre: 'Cadre libre', bloc: 'Bloc foré (embase / bloc hydraulique)', cartouche: 'Cartouche hydraulique (insérée dans le bloc foré)', ensemble: 'Ensemble / sous-ensemble (groupe, machine)' };
+def('frame', {
+  name: 'Cadre (bloc foré, cartouche, ensemble)', cat: 'Connexions', w: 200, h: 140, ports: [], isFrame: true, noLabel: true,
+  defProps: { tag: '', kind: 'libre', title: '', fw: 200, fh: 140, color: '#475569', dash: 'mixte', lw: 1.5, carry: true },
+  size: c => ({ w: Math.max(20, +c.props.fw || 200), h: Math.max(20, +c.props.fh || 140) }),
+  fields: [{ k: 'kind', label: 'Définition du cadre', type: 'sel', opts: Object.keys(FKIND), labels: Object.values(FKIND) },
+    { k: 'tag', label: 'Repère (ex. 1B1 pour un bloc, 1V5 pour une cartouche)', type: 'text' }, { k: 'title', label: 'Titre affiché', type: 'text' },
+    { k: 'fw', label: 'Largeur', type: 'num', step: 10 }, { k: 'fh', label: 'Hauteur', type: 'num', step: 10 },
+    { k: 'color', label: 'Couleur du trait', type: 'color' },
+    { k: 'dash', label: 'Type de trait', type: 'sel', opts: Object.keys(FDASH), labels: ['Continu', 'Pointillé court', 'Pointillé moyen', 'Pointillé long', 'Trait mixte (trait-point : axe / construction, ISO 1219 pour un bloc)', 'Trait mixte double (trait-point-point)', 'Pointillé fin (points)'] },
+    { k: 'lw', label: 'Épaisseur du trait', type: 'num', step: 0.5 },
+    { k: 'carry', label: 'Déplacer les composants contenus avec le cadre', type: 'chk' }, REFF],
+  bom: c => ({ libre: '', bloc: 'Bloc foré (embase hydraulique)', cartouche: 'Cartouche hydraulique à visser', ensemble: 'Ensemble' })[c.props.kind || 'libre'] + (c.props.title ? ' — ' + c.props.title : ''),
+  noBom: c => (c.props.kind || 'libre') === 'libre',
+  init(c) { // préréglages selon la définition choisie
+    if (c.props._k === c.props.kind) return; c.props._k = c.props.kind;
+    if (c.props.kind === 'bloc') Object.assign(c.props, { dash: 'mixte', color: '#475569', lw: 1.5 }); if (c.props.kind === 'cartouche') Object.assign(c.props, { dash: 'court', color: '#7c3aed', lw: 1.2 }); if (c.props.kind === 'ensemble') Object.assign(c.props, { dash: 'mixte2', color: '#0f766e', lw: 1.5 });
+  },
+  draw(ctx, c) {
+    const { w, h } = this.size(c), lw = Math.max(0.5, +c.props.lw || 1.5); this.init(c);
+    ctx.save(); ctx.strokeStyle = c.props.color || '#475569'; ctx.lineWidth = lw; ctx.setLineDash((FDASH[c.props.dash] || []).map(x => x * Math.max(1, lw / 1.5)));
+    ctx.strokeRect(lw / 2, lw / 2, w - lw, h - lw); ctx.restore();
+    const t = [c.props.tag, c.props.title || (c.props.kind !== 'libre' ? FKIND[c.props.kind].split(' (')[0] : '')].filter(Boolean).join(' — ');
+    if (t) D.text(ctx, t, 6, 9, 9, c.props.color || '#475569', 'left', true);
+  }
+});
 def('text', {
   name: 'Texte / annotation', cat: 'Connexions', w: 120, h: 40, ports: [], noLabel: true, defProps: { text: 'Annotation', size: 14 },
   fields: [{ k: 'text', label: 'Texte', type: 'textarea' }, { k: 'size', label: 'Taille', type: 'num' }],
@@ -882,15 +910,41 @@ def('throttle', {
     ctx.strokeStyle = INK; ctx.lineWidth = 1.6; D.line(ctx, [30, 0, 30, 80]);
     ctx.beginPath(); ctx.arc(14, 40, 14, -0.7, 0.7); ctx.stroke(); ctx.beginPath(); ctx.arc(46, 40, 14, Math.PI - 0.7, Math.PI + 0.7); ctx.stroke();
     D.arrow(ctx, 16, 56, 44, 24, 5);
-    if (c.props.check) { D.line(ctx, [30, 12, 54, 12, 54, 68, 30, 68]); D.circle(ctx, 54, 44, 5, '#fff'); D.line(ctx, [47, 36, 54, 50, 61, 36]); }
+    if (c.props.check) { D.line(ctx, [30, 12, 54, 12, 54, 68, 30, 68]); D.check(ctx, 54, 42, 5); }
     D.text(ctx, (c.props.open | 0) + '%', 8, 72, 8, '#64748b');
   }
 });
+const CKIND = { simple: 'Clapet anti-retour simple', ressort: 'Clapet anti-retour taré (à ressort)', pilote: 'Clapet anti-retour piloté' };
 def('check', {
-  name: 'Clapet anti-retour', cat: 'Appareils fluidiques', w: 40, h: 60, ports: [P('1', 20, 60, 'f'), P('2', 20, 0, 'f')],
-  defProps: { tag: '1V3' }, fields: [TAGF, REFF], faults: [['leak', 'Clapet non étanche']], bom: 'Clapet anti-retour',
-  dlinks(c, S) { if (c.fault === 'leak') return [['1', '2']]; return flowDir(S, c, '1', '2') === 1 ? [['1', '2']] : []; },
-  draw(ctx) { ctx.strokeStyle = INK; ctx.lineWidth = 1.6; D.line(ctx, [20, 0, 20, 22]); D.line(ctx, [20, 42, 20, 60]); D.circle(ctx, 20, 30, 7, '#fff'); D.line(ctx, [10, 18, 20, 36, 30, 18]); }
+  name: 'Clapet anti-retour', cat: 'Appareils fluidiques', w: 40, h: 60,
+  portsFn(c) { const o = [P('1', 20, 60, 'f', '1 (entrée, passage libre 1→2)'), P('2', 20, 0, 'f', '2 (sortie)')]; if (c.props.kind === 'pilote') o.push(P('X', 32, 0, 'f', 'X (pilotage : ouvre le retour 2→1)')); return o; },
+  defProps: { tag: '1V3', kind: 'simple', crack: 3, ratio: 3, pxmin: 5 },
+  fieldsFn: c => [TAGF, { k: 'kind', label: 'Type de clapet', type: 'sel', opts: Object.keys(CKIND), labels: Object.values(CKIND) },
+    ...(c.props.kind === 'ressort' ? [{ k: 'crack', label: 'Pression d\'ouverture — tarage du ressort (bar)', type: 'num', step: 0.5 }] : []),
+    ...(c.props.kind === 'pilote' ? [{ k: 'ratio', label: 'Rapport de pilotage (surface piston / surface clapet)', type: 'num', step: 0.5 }, { k: 'pxmin', label: 'Pression de pilotage minimale (bar)', type: 'num', step: 0.5 }] : []), REFF],
+  faults: [['leak', 'Clapet non étanche'], ['stuck', 'Clapet grippé fermé'], ['pil', 'Piston de pilotage grippé (ne s\'ouvre plus en retour)']],
+  bom: c => (CKIND[c.props.kind || 'simple'] || 'Clapet anti-retour') + (c.props.kind === 'ressort' ? ' ' + c.props.crack + ' bar' : ''),
+  update(c, S) { // clapet piloté : l'orifice X soulève le clapet → passage 2→1 (descente d'une charge retenue)
+    if (c.props.kind !== 'pilote') return false; const px = S.P(c, 'X'), p2 = Math.max(S.P(c, '2'), (S.hold && S.hold.get(S.root(c, '2'))) || 0);
+    const o = c.fault !== 'pil' && c.fault !== 'stuck' && px >= (+c.props.pxmin || 5) && px * (+c.props.ratio || 3) >= p2 * 0.95;
+    if (!!st(c).pop !== o) { st(c).pop = o; return true; } return false;
+  },
+  dlinks(c, S) {
+    if (c.fault === 'leak') return [['1', '2'], ['2', '1']]; if (c.fault === 'stuck') return [];
+    if (st(c).pop) return [['1', '2'], ['2', '1']];
+    if (flowDir(S, c, '1', '2') !== 1) return [];
+    if (c.props.kind === 'ressort') { const a = S.pre(c, '1'); if (!(a.pr >= (+c.props.crack || 0) || a.vent)) return []; }
+    return [['1', '2']];
+  },
+  draw(ctx, c) {
+    const k = c.props.kind || 'simple'; ctx.strokeStyle = INK; ctx.lineWidth = 1.6;
+    D.line(ctx, [20, 0, 20, 22]); D.line(ctx, [20, 38, 20, 60]);
+    if (k === 'ressort') { ctx.beginPath(); ctx.moveTo(20, 21); [17, 14, 11, 8, 5].forEach((y, i) => ctx.lineTo(i % 2 ? 12 : 28, y)); ctx.lineTo(20, 3); ctx.stroke(); D.text(ctx, c.props.crack + ' bar', 8, 12, 7, '#64748b', 'right'); }
+    if (k === 'pilote') { D.rect(ctx, 4, 12, 32, 40, '#fff'); D.dash(ctx, 1); D.line(ctx, [32, 0, 32, 12]); D.dash(ctx, 0); D.line(ctx, [20, 0, 20, 22]); D.line(ctx, [20, 38, 20, 60]); }
+    D.check(ctx, 20, 29, 7);
+    if (st(c).pop) D.text(ctx, '↓', 34, 40, 10, '#dc2626', 'center', true);
+  },
+  probe: (c, S) => { const k = c.props.kind || 'simple', o = { 'Type': CKIND[k], 'Passage libre': '1 → 2' }; if (k === 'ressort') o['Pression d\'ouverture'] = c.props.crack + ' bar'; if (k === 'pilote' && S) { o['Pression de pilotage X'] = fmt(S.P(c, 'X'), 1) + ' bar'; o['Retour 2 → 1'] = st(c).pop ? 'OUVERT (piloté)' : 'fermé'; } return o; }
 });
 /* ---------- Appareils de pression (fiches F05A à F05H) ---------- */
 function drawPV(ctx, nc, set, open, extra) { // carré + flèche décalée + ressort réglable + pilotage
@@ -948,7 +1002,7 @@ def('cooler', {
     if (c.props.cool === 'eau') { D.arrow(ctx, 62, 40, 78, 40, 4); D.text(ctx, 'eau', 70, 50, 7, '#0369a1'); }
     if (c.props.cool === 'fan') { D.line(ctx, [62, 40, 70, 40]); D.circle(ctx, 74, 40, 6, '#fff'); D.text(ctx, 'M', 74, 40, 7, INK, 'center', true);
       if (run) { const a = (S.t * 10) % (Math.PI * 2); ctx.strokeStyle = '#0369a1'; D.line(ctx, [70 + Math.cos(a) * 5, 22 + Math.sin(a) * 5, 70 - Math.cos(a) * 5, 22 - Math.sin(a) * 5]); D.line(ctx, [70 + Math.sin(a) * 5, 22 - Math.cos(a) * 5, 70 - Math.sin(a) * 5, 22 + Math.cos(a) * 5]); ctx.strokeStyle = INK; } }
-    if (c.props.medium !== 'pneu' && c.props.bypass) { D.line(ctx, [40, 72, 6, 72, 6, 30]); D.line(ctx, [6, 22, 6, 8, 40, 8]); D.circle(ctx, 6, 30, 3.5, '#fff'); D.line(ctx, [2, 24, 6, 32, 10, 24]); }
+    if (c.props.medium !== 'pneu' && c.props.bypass) { D.line(ctx, [40, 72, 6, 72, 6, 30]); D.line(ctx, [6, 22, 6, 8, 40, 8]); D.check(ctx, 6, 28, 3.5); }
     D.text(ctx, c.props.medium === 'pneu' ? 'air' : 'huile', 74, 76, 7, '#64748b', 'right');
     D.text(ctx, (c.props.pmax || 16) + ' bar maxi', 74, 66, 6, '#64748b', 'right');
     if (st(c).burst) { ctx.strokeStyle = '#dc2626'; ctx.lineWidth = 3; D.line(ctx, [26, 26, 54, 54]); D.line(ctx, [54, 26, 26, 54]); ctx.lineWidth = 1.6; ctx.strokeStyle = INK; }
@@ -1016,7 +1070,7 @@ def('seqv', {
   draw(ctx, c) {
     ctx.strokeStyle = INK; ctx.lineWidth = 1.6; D.line(ctx, [30, 80, 30, 60]); D.line(ctx, [30, 20, 30, 0]);
     drawPV(ctx, true, c.props.set, !!st(c).open); D.dash(ctx, 1); D.line(ctx, [30, 70, 6, 70, 6, 56, 14, 56]); D.line(ctx, [46, 24, 58, 24, 58, 6]); D.dash(ctx, 0);
-    if (c.props.check) { D.line(ctx, [30, 74, 54, 74, 54, 70]); D.line(ctx, [30, 6, 54, 6, 54, 12]); D.circle(ctx, 54, 64, 4, '#fff'); D.line(ctx, [49, 58, 54, 66, 59, 58]); }
+    if (c.props.check) { D.line(ctx, [30, 74, 54, 74, 54, 70]); D.line(ctx, [30, 6, 54, 6, 54, 12]); D.check(ctx, 54, 62, 4); }
   },
   probe: (c, S) => ({ 'Pression A': S ? fmt(S.P(c, 'A'), 1) + ' bar' : '—', 'État': st(c).open ? 'ouverte : 2e récepteur alimenté' : 'fermée' })
 });
@@ -1031,7 +1085,7 @@ def('cbv', {
     const o = !!st(c).open; ctx.strokeStyle = INK; ctx.lineWidth = 1.6; D.line(ctx, [40, 80, 40, 60]); D.line(ctx, [40, 20, 40, 0]);
     ctx.save(); ctx.translate(10, 0); drawPV(ctx, true, c.props.set, o); ctx.restore();
     D.dash(ctx, 1); D.line(ctx, [0, 40, 24, 40]); D.dash(ctx, 0);
-    D.line(ctx, [40, 70, 72, 70, 72, 10, 40, 10]); D.circle(ctx, 72, 44, 5, '#fff'); D.line(ctx, [66, 36, 72, 48, 78, 36]);
+    D.line(ctx, [40, 70, 72, 70, 72, 10, 40, 10]); D.check(ctx, 72, 42, 5);
   },
   probe: (c, S) => ({ 'Pression de pilotage X': S ? fmt(S.P(c, 'X'), 1) + ' bar' : '—', 'État': st(c).open ? 'ouverte (descente pilotée)' : 'fermée : charge retenue' })
 });
@@ -1271,7 +1325,8 @@ const PALETTE = [
     ['valve', 'Distributeur 4/3 centre Y (A et B→T)', { vt: 'v43f', medium: 'hyd', aL: 'sol', aR: 'sol', tL: 'Y1', tR: 'Y2' }],
     ['motorf', 'Moteur hydraulique', { medium: 'hyd' }], ['pumpvar']]],
   ['Appareils de pression', [['relief'], ['relief', 'Limiteur à action pilotée (orifice X)', { rpilot: true, set: 160, tag: '0V1' }], ['relief', 'Limiteur avec mise à vide électrique', { vtag: 'Y0', tag: '0V1' }], ['reducer'], ['seqv'], ['cbv']]],
-  ['Appareils fluidiques', [['filter'], ['cooler', 'Refroidisseur d\'huile (ventilé)', { medium: 'hyd', cool: 'fan' }], ['cooler', 'Échangeur huile / eau', { medium: 'hyd', cool: 'eau', kw: 15 }], ['cooler', 'Refroidisseur d\'air comprimé', { medium: 'pneu', cool: 'fan', kw: 4, tag: '0E2' }], ['throttle'], ['throttle', 'Limiteur bidirectionnel', { check: false }], ['check'], ['shuttle'], ['twopress'], ['pswitch']]],
+  ['Cadres', [['frame', 'Cadre libre'], ['frame', 'Bloc foré', { kind: 'bloc', title: 'Bloc foré', fw: 260, fh: 180 }], ['frame', 'Cartouche hydraulique', { kind: 'cartouche', fw: 100, fh: 120 }], ['frame', 'Ensemble / groupe', { kind: 'ensemble', fw: 320, fh: 220 }]]],
+  ['Appareils fluidiques', [['check', 'Clapet anti-retour simple'], ['check', 'Clapet anti-retour taré (ressort)', { kind: 'ressort', crack: 3 }], ['check', 'Clapet anti-retour piloté', { kind: 'pilote' }], ['filter'], ['cooler', 'Refroidisseur d\'huile (ventilé)', { medium: 'hyd', cool: 'fan' }], ['cooler', 'Échangeur huile / eau', { medium: 'hyd', cool: 'eau', kw: 15 }], ['cooler', 'Refroidisseur d\'air comprimé', { medium: 'pneu', cool: 'fan', kw: 4, tag: '0E2' }], ['throttle'], ['throttle', 'Limiteur bidirectionnel', { check: false }], ['shuttle'], ['twopress'], ['pswitch']]],
   ['Électrique — commande', [['supply'], ['pb_no'], ['pb_nc'], ['sw_no'], ['estop'], ['coil'], ['k_no'], ['k_nc'], ['coil_t'], ['ls_no'], ['ls_nc'], ['prox'], ['sol'], ['lamp'], ['motor'], ['buzzer']]],
   ['Électrique — puissance', [['mains3'], ['mains3', 'Réseau triphasé 380 V', { U: '380' }], ['mains1'], ['transfo'], ['psu'], ['breaker'], ['breaker', 'Disjoncteur 1P+N', { poles: 2, In: 10 }], ['rcd'], ['rcd', 'Différentiel 4P 30 mA', { poles: 4 }], ['fuse'], ['kmp'], ['rth'], ['motor3'], ['motor', 'Moteur monophasé 230 V', { vnom: '230', power: 750, tag: 'M2' }], ['lamp', 'Voyant 230 V', { vnom: '230', power: 5 }], ['coil', 'Bobine de contacteur 230 V', { vnom: '230', tag: 'KM1', power: 8 }], ['coil', 'Bobine de contacteur 24 V', { tag: 'KM1', power: 5 }]]],
   ['Automate programmable', [['plc']]],

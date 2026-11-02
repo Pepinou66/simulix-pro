@@ -13,7 +13,8 @@ const FILTERS = {
   csv: [{ name: 'CSV (Excel)', extensions: ['csv'] }],
   ino: [{ name: 'Croquis Arduino', extensions: ['ino'] }],
   png: [{ name: 'Image PNG', extensions: ['png'] }],
-  pdf: [{ name: 'Document PDF', extensions: ['pdf'] }]
+  pdf: [{ name: 'Document PDF', extensions: ['pdf'] }],
+  json: [{ name: 'Fichier de langue (JSON)', extensions: ['json'] }]
 };
 
 function fileArg(argv) { return argv.slice(1).find(a => /\.(sxp|json)$/i.test(a) && fs.existsSync(a)); }
@@ -47,21 +48,34 @@ function createWindow() {
 function sendOpen(f) { try { win.webContents.send('open-file', fs.readFileSync(f, 'utf8')); } catch (e) { dialog.showErrorBox('Simulix Pro', 'Impossible d\'ouvrir ' + f); } }
 const menuCmd = cmd => () => win && win.webContents.send('menu', cmd);
 
+// ---- langues : traduction du menu + fichiers de langue de l'utilisateur (dossier « langues » des données de l'application)
+let MENU_DICT = null;
+const T = s => { if (!MENU_DICT) return s; const k = s.replace(/-?\d+(?:[.,]\d+)?/g, '#').replace(/\s+/g, ' ').trim(); return MENU_DICT[k] || s; };
+const langDir = () => path.join(app.getPath('userData'), 'langues');
+function readLangs() {
+  const d = langDir(); try { fs.mkdirSync(d, { recursive: true }); } catch (e) { }
+  const out = []; try { for (const f of fs.readdirSync(d)) if (/\.json$/i.test(f)) { try { out.push(JSON.parse(fs.readFileSync(path.join(d, f), 'utf8'))); } catch (e) { } } } catch (e) { }
+  return out;
+}
+ipcMain.on('i18n:menu', (_, dict) => { MENU_DICT = dict ? Object.fromEntries(Object.entries(dict).filter(([, v]) => v).map(([k, v]) => [k.replace(/-?\d+(?:[.,]\d+)?/g, '#').replace(/\s+/g, ' ').trim(), v])) : null; buildMenu(); });
+ipcMain.handle('i18n:langs', () => readLangs());
+ipcMain.handle('i18n:openDir', () => { try { fs.mkdirSync(langDir(), { recursive: true }); } catch (e) { } return shell.openPath(langDir()); });
+
 function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate([
-    { label: 'Fichier', submenu: [
-      { label: 'Nouveau projet', accelerator: 'CmdOrCtrl+N', click: menuCmd('new') },
-      { label: 'Ouvrir…', accelerator: 'CmdOrCtrl+O', click: menuCmd('open') },
-      { label: 'Enregistrer…', accelerator: 'CmdOrCtrl+S', click: menuCmd('save') },
+    { label: T('Fichier'), submenu: [
+      { label: T('Nouveau projet'), accelerator: 'CmdOrCtrl+N', click: menuCmd('new') },
+      { label: T('Ouvrir…'), accelerator: 'CmdOrCtrl+O', click: menuCmd('open') },
+      { label: T('Enregistrer…'), accelerator: 'CmdOrCtrl+S', click: menuCmd('save') },
       { type: 'separator' },
-      { label: 'Exporter tous les folios en PDF…', accelerator: 'CmdOrCtrl+P', click: menuCmd('pdf') },
-      { label: 'Exporter le folio en image PNG…', click: menuCmd('png') },
-      { type: 'separator' }, { role: 'quit', label: 'Quitter' }] },
-    { label: 'Édition', submenu: [{ role: 'cut', label: 'Couper' }, { role: 'copy', label: 'Copier' }, { role: 'paste', label: 'Coller' }, { role: 'selectAll', label: 'Tout sélectionner' }] },
-    { label: 'Simulation', submenu: [{ label: 'Démarrer', accelerator: 'F5', click: menuCmd('run') }, { label: 'Arrêter', accelerator: 'Shift+F5', click: menuCmd('stop') }] },
-    { label: 'Outils', submenu: [{ label: 'Outils d\'ingénierie (nomenclature, vérification…)', click: menuCmd('eng') }] },
-    { label: 'Affichage', submenu: [{ role: 'resetZoom', label: 'Taille réelle' }, { role: 'zoomIn', label: 'Agrandir l\'interface' }, { role: 'zoomOut', label: 'Réduire l\'interface' }, { type: 'separator' }, { role: 'togglefullscreen', label: 'Plein écran' }, { role: 'toggleDevTools', label: 'Outils de développement' }] },
-    { label: 'Aide', submenu: [{ label: 'Aide de Simulix Pro', accelerator: 'F1', click: menuCmd('help') }, { label: 'Rechercher des mises à jour…', click: menuCmd('updates') }, { label: 'Code source sur GitHub', click: () => shell.openExternal('https://github.com/Pepinou66/simulix-pro') }, { label: 'À propos', click: () => dialog.showMessageBox(win, { title: 'Simulix Pro', message: 'Simulix Pro ' + app.getVersion(), detail: 'Conception et simulation de systèmes automatisés : pneumatique, hydraulique, électrique, automate programmable (Ladder, GRAFCET), électronique numérique.\n\nPilotes : Arduino (port série USB), automates Modbus TCP.' }) }] }
+      { label: T('Exporter tous les folios en PDF…'), accelerator: 'CmdOrCtrl+P', click: menuCmd('pdf') },
+      { label: T('Exporter le folio en image PNG…'), click: menuCmd('png') },
+      { type: 'separator' }, { role: 'quit', label: T('Quitter') }] },
+    { label: T('Édition'), submenu: [{ role: 'cut', label: T('Couper') }, { role: 'copy', label: T('Copier') }, { role: 'paste', label: T('Coller') }, { role: 'selectAll', label: T('Tout sélectionner') }] },
+    { label: T('Simulation'), submenu: [{ label: T('Démarrer'), accelerator: 'F5', click: menuCmd('run') }, { label: T('Arrêter'), accelerator: 'Shift+F5', click: menuCmd('stop') }] },
+    { label: T('Outils'), submenu: [{ label: T('Outils d\'ingénierie (nomenclature, vérification…)'), click: menuCmd('eng') }] },
+    { label: T('Affichage'), submenu: [{ role: 'resetZoom', label: T('Taille réelle') }, { role: 'zoomIn', label: T('Agrandir l\'interface') }, { role: 'zoomOut', label: T('Réduire l\'interface') }, { type: 'separator' }, { role: 'togglefullscreen', label: T('Plein écran') }, { role: 'toggleDevTools', label: T('Outils de développement') }] },
+    { label: T('Aide'), submenu: [{ label: T('Ouvrir le dossier des langues'), click: () => shell.openPath((fs.mkdirSync(langDir(), { recursive: true }), langDir())) }, { type: 'separator' }, { label: T('Aide de Simulix Pro'), accelerator: 'F1', click: menuCmd('help') }, { label: T('Rechercher des mises à jour…'), click: menuCmd('updates') }, { label: T('Code source sur GitHub'), click: () => shell.openExternal('https://github.com/Pepinou66/simulix-pro') }, { label: T('À propos'), click: () => dialog.showMessageBox(win, { title: 'Simulix Pro', message: 'Simulix Pro ' + app.getVersion(), detail: 'Conception et simulation de systèmes automatisés : pneumatique, hydraulique, électrique, automate programmable (Ladder, GRAFCET), électronique numérique.\n\nPilotes : Arduino (port série USB), automates Modbus TCP.' }) }] }
   ]));
 }
 

@@ -9,6 +9,9 @@ contextBridge.exposeInMainWorld('simulix', {
   savePDF: (name, pages) => ipcRenderer.invoke('file:pdf', name, pages),
   onMenu: cb => ipcRenderer.on('menu', (_, cmd) => cb(cmd)),
   onOpenFile: cb => ipcRenderer.on('open-file', (_, text) => cb(text)),
+  setMenuLang: dict => ipcRenderer.send('i18n:menu', dict),
+  onLangs: cb => { ipcRenderer.invoke('i18n:langs').then(cb); },
+  openLangFolder: () => ipcRenderer.invoke('i18n:openDir'),
   updates: {
     get: () => ipcRenderer.invoke('upd:get'), check: () => ipcRenderer.invoke('upd:check'), download: () => ipcRenderer.invoke('upd:download'),
     install: () => ipcRenderer.invoke('upd:install'), later: () => ipcRenderer.invoke('upd:later'), settings: s => ipcRenderer.invoke('upd:settings', s),
