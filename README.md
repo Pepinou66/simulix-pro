@@ -11,6 +11,6 @@ Application de bureau Windows (Electron) avec mises à jour automatiques.
 
 ## Publier une nouvelle version
 1. Modifier `version` dans `desktop/package.json` (ex. `1.2.1`)
-2. `git commit -am "Version 1.2.1" && git tag v1.2.1 && git push && git push --tags`
+2. `git commit -am "Version 1.2.1" && git push`
 3. GitHub Actions construit `Simulix-Pro-Setup-1.2.1.exe` et publie la release :
    les logiciels installés la détectent automatiquement.

@@ -1,11 +1,13 @@
 # Construit l'installateur Windows et publie la release GitHub
 # (utilisée par la mise à jour automatique de Simulix Pro).
-# Déclenchement : push d'un tag "v*" (ex. v1.2.0) — la version du tag doit
-# correspondre à "version" dans desktop/package.json.
+# Déclenchement : modification de desktop/package.json sur main (nouvelle "version")
+# ou lancement manuel. La release v<version> est créée automatiquement ; si elle
+# existe déjà, la publication est ignorée.
 name: Release Windows
 on:
   push:
-    tags: ['v*']
+    branches: [main]
+    paths: ['desktop/package.json']
   workflow_dispatch:
 permissions:
   contents: write
