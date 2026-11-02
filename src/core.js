@@ -411,6 +411,13 @@ function finishWire(hp) {
   App.wires.push({ id: App.uid(), a: { c: a.c.id, p: a.p.id }, b: { c: hp.c.id, p: hp.p.id }, kind: k, mo: null });
   App.changed();
 }
+// composants détruits en simulation (pompe cassée, radiateur éclaté, appareil grillé…) : réparation sans arrêter la simulation
+function isBroken(c) { const s = c.state || {}; return !!(s.broken || s.burst || s.burnt); }
+function repairComp(c) {
+  const s = c.state || {}; ['broken', 'burst', 'burnt', 'over', 'warnP', 'warnDry'].forEach(k => delete s[k]);
+  if (Sim.S) { Sim.S.stickyBanner = ''; Sim.S.banner = ''; Sim.settleNow(); }
+  toast((c.props.tag || DEFS[c.type].name) + ' réparé(e) / remplacé(e)'); Props.render();
+}
 const kname = k => ({ e: 'électrique', p: 'pneumatique', h: 'hydraulique', l: 'logique', f: 'fluide', x: 'universel' }[k]);
 cv.addEventListener('pointermove', e => {
   if (ptrs.has(e.pointerId)) ptrs.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
@@ -508,6 +515,7 @@ const Ctx = {
         if (c.type === 'pump') it('🔧 Modifier le tarage du limiteur…', async () => { const v = await ask('Tarage du limiteur de pression (bar)', String(c.props.pmax)); if (v != null && +v > 0) { c.props.pmax = +v; App.changed(); } });
         if (c.type === 'relief' || c.type === 'seqv' || c.type === 'reducer' || c.type === 'cbv') it('🔧 Modifier le réglage…', async () => { const v = await ask('Réglage (bar)', String(c.props.set)); if (v != null && +v > 0) { c.props.set = +v; App.changed(); } });
         if (c.type === 'text') it('✎ Modifier le texte…', async () => { const v = await ask('Texte', c.props.text, true); if (v != null) { c.props.text = v; App.changed(); } });
+        if (Sim.S && isBroken(c)) it('🛠 Réparer / remplacer ' + (c.props.tag || ''), () => repairComp(c));
         if (d.plot) it('📈 Ajouter au traceur', () => Plot.add(c));
         const fl = faultList(c);
         if (fl.length && !App.hideFaults) { sep(); hd('Défaillance simulée'); it((c.fault ? '' : '✔ ') + 'Aucune', () => { c.fault = null; App.changed(); }); fl.forEach(([k, l]) => it((c.fault === k ? '✔ ' : '') + l, () => { c.fault = k; App.changed(); })); }
@@ -683,7 +691,8 @@ const Props = {
     const el = $('#probe'); if (!el) return; const c = App.sel.size === 1 ? App.byId([...App.sel][0]) : null; if (!c) return;
     const d = DEFS[c.type]; if (!d.probe) { el.innerHTML = ''; return; }
     const o = d.probe.call(d, c, Sim.S); const ks = Object.keys(o); if (!ks.length) { el.innerHTML = ''; return; }
-    el.innerHTML = `<div class="kv">${ks.map(k => `<span>${esc(k)}</span><b>${esc(o[k])}</b>`).join('')}</div>`;
+    el.innerHTML = `<div class="kv">${ks.map(k => `<span>${esc(k)}</span><b>${esc(o[k])}</b>`).join('')}</div>` + (Sim.S && isBroken(c) ? `<div class="btns" style="margin-top:6px"><button class="btn" id="pRepair">🛠 Réparer / remplacer ${esc(c.props.tag || '')}</button></div>` : '');
+    const rb = $('#pRepair'); if (rb) rb.onclick = () => repairComp(c);
   },
   renderWire(el) {
     const w = App.wires.find(x => x.id === App.selWire); if (!w) { App.selWire = null; return this.render(); }

@@ -816,7 +816,7 @@ def('hpump', {
     ...(c.props.ptype === 'variable' ? [{ k: 'cmd', label: 'Cylindrée réglée (% du maxi)', type: 'range' }] : []),
     ...(c.props.ptype === 'regp' ? [{ k: 'pc', label: 'Consigne du régulateur de pression (bar)', type: 'num' }] : []),
     ...(c.props.ptype === 'ls' ? [{ k: 'dls', label: 'Δp de stand-by load-sensing (bar)', type: 'num' }, { k: 'pc', label: 'Coupure de pression (cut-off, bar)', type: 'num' }] : []),
-    { k: 'padm', label: 'Pression maxi admissible par la pompe (bar)', type: 'num' },
+    { k: 'padm', label: 'Pression maxi admissible par la pompe (bar) — casse au-delà de la pointe (+10 %)', type: 'num' },
     { k: 'mot', label: 'Entraînée par le moteur électrique (repère, vide = entraînement permanent)', type: 'text' },
     ...((c.props.ptype || 'fixe') === 'fixe' ? [{ k: 'drain', label: 'Drain de carter externe (orifice L)', type: 'chk' }] : []), REFF],
   catalog: [{ ref: 'Pompe à engrenages externes 8 cm³/tr', props: { ptype: 'fixe', tech: 'engr', disp: 8, padm: 200 } }, { ref: 'Pompe à engrenages externes 16 cm³/tr', props: { ptype: 'fixe', tech: 'engr', disp: 16, padm: 210 } },
@@ -845,8 +845,8 @@ def('hpump', {
     const s = st(c), v = this.srcVal(c); if (s.dry && v.nr > 0 && !s.warnDry) { s.warnDry = 1; S.stickyBanner = S.banner = '⚠ Pompe ' + c.props.tag + ' : aspiration S non reliée au réservoir — la pompe tourne à sec (cavitation, destruction)'; }
     if (!s.dry) s.warnDry = 0;
     const p = S.P(c, 'P'), lim = +c.props.padm || 250;
-    if (v.q > 0.01 && p > lim * 1.02) { if (s.over == null) s.over = S.t; if (!s.broken && S.t - s.over > 0.3) { s.broken = true; const rl = App.comps.find(o => o.type === 'relief' && S.root(o, 'P') === S.root(c, 'P') && S.vent(o, 'T')); S.stickyBanner = S.banner = '💥 Pompe ' + c.props.tag + ' CASSÉE : ' + Math.round(p) + ' bar > pression maxi admissible ' + lim + ' bar' + (rl ? ' — le limiteur ' + rl.props.tag + ' était taré à ' + rl.props.set + ' bar, au-dessus de la pompe (le tarage doit rester sous la pression maxi de la pompe)' : ' — aucun limiteur de pression ne la protégeait') + '. Arrêter la simulation pour remplacer la pompe.'; return; } } else s.over = null;
-    if (v.q > 0.01 && p > lim * 1.01 && !s.warnP && !s.broken) { s.warnP = 1; const rl = App.comps.find(o => o.type === 'relief' && S.root(o, 'P') === S.root(c, 'P') && S.vent(o, 'T')); S.stickyBanner = S.banner = rl ? '💥 Pompe ' + c.props.tag + ' : ' + Math.round(p) + ' bar > pression maxi admissible ' + lim + ' bar — le limiteur ' + rl.props.tag + ' est taré à ' + rl.props.set + ' bar, trop haut pour la pompe : régler le tarage sous ' + lim + ' bar' : '💥 Pompe ' + c.props.tag + ' : ' + Math.round(p) + ' bar > pression maxi admissible ' + lim + ' bar — aucun limiteur de pression ne protège le refoulement (casse pompe / flexibles)' + ((r => r ? ' : le limiteur ' + r.props.tag + ' est monté en série, son orifice T doit aller au réservoir' : '')(App.comps.find(o => o.type === 'relief' && st(o).ser))); }
+    if (v.q > 0.01 && p > lim * 1.1) { if (s.over == null) s.over = S.t; if (!s.broken && S.t - s.over > 0.3) { s.broken = true; const rl = App.comps.find(o => o.type === 'relief' && S.root(o, 'P') === S.root(c, 'P') && S.vent(o, 'T')); S.stickyBanner = S.banner = '💥 Pompe ' + c.props.tag + ' CASSÉE : ' + Math.round(p) + ' bar > pression maxi admissible ' + lim + ' bar' + (rl ? ' — le limiteur ' + rl.props.tag + ' était taré à ' + rl.props.set + ' bar, au-dessus de la pompe (le tarage doit rester sous la pression maxi de la pompe)' : ' — aucun limiteur de pression ne la protégeait') + '. Arrêter la simulation pour remplacer la pompe.'; return; } } else s.over = null;
+    if (v.q > 0.01 && p > lim * 1.03 && !s.warnP && !s.broken) { s.warnP = 1; const rl = App.comps.find(o => o.type === 'relief' && S.root(o, 'P') === S.root(c, 'P') && S.vent(o, 'T')); S.stickyBanner = S.banner = rl ? '💥 Pompe ' + c.props.tag + ' : ' + Math.round(p) + ' bar > pression maxi admissible ' + lim + ' bar — le limiteur ' + rl.props.tag + ' est taré à ' + rl.props.set + ' bar, trop haut pour la pompe : régler le tarage sous ' + lim + ' bar' : '💥 Pompe ' + c.props.tag + ' : ' + Math.round(p) + ' bar > pression maxi admissible ' + lim + ' bar — aucun limiteur de pression ne protège le refoulement (casse pompe / flexibles)' + ((r => r ? ' : le limiteur ' + r.props.tag + ' est monté en série, son orifice T doit aller au réservoir' : '')(App.comps.find(o => o.type === 'relief' && st(o).ser))); }
     if (p < lim && s.warnP && !s.broken) { s.warnP = 0; if ((S.stickyBanner || '').startsWith('💥 Pompe ' + c.props.tag + ' ')) S.stickyBanner = ''; }
   },
   press(c) { if (c.props.ptype === 'variable') { c.props.cmd = ((+c.props.cmd || 0) >= 100 ? 0 : (+c.props.cmd || 0) + 25); Props.render(); return true; } },
@@ -2624,6 +2624,13 @@ function finishWire(hp) {
   App.wires.push({ id: App.uid(), a: { c: a.c.id, p: a.p.id }, b: { c: hp.c.id, p: hp.p.id }, kind: k, mo: null });
   App.changed();
 }
+// composants détruits en simulation (pompe cassée, radiateur éclaté, appareil grillé…) : réparation sans arrêter la simulation
+function isBroken(c) { const s = c.state || {}; return !!(s.broken || s.burst || s.burnt); }
+function repairComp(c) {
+  const s = c.state || {}; ['broken', 'burst', 'burnt', 'over', 'warnP', 'warnDry'].forEach(k => delete s[k]);
+  if (Sim.S) { Sim.S.stickyBanner = ''; Sim.S.banner = ''; Sim.settleNow(); }
+  toast((c.props.tag || DEFS[c.type].name) + ' réparé(e) / remplacé(e)'); Props.render();
+}
 const kname = k => ({ e: 'électrique', p: 'pneumatique', h: 'hydraulique', l: 'logique', f: 'fluide', x: 'universel' }[k]);
 cv.addEventListener('pointermove', e => {
   if (ptrs.has(e.pointerId)) ptrs.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
@@ -2721,6 +2728,7 @@ const Ctx = {
         if (c.type === 'pump') it('🔧 Modifier le tarage du limiteur…', async () => { const v = await ask('Tarage du limiteur de pression (bar)', String(c.props.pmax)); if (v != null && +v > 0) { c.props.pmax = +v; App.changed(); } });
         if (c.type === 'relief' || c.type === 'seqv' || c.type === 'reducer' || c.type === 'cbv') it('🔧 Modifier le réglage…', async () => { const v = await ask('Réglage (bar)', String(c.props.set)); if (v != null && +v > 0) { c.props.set = +v; App.changed(); } });
         if (c.type === 'text') it('✎ Modifier le texte…', async () => { const v = await ask('Texte', c.props.text, true); if (v != null) { c.props.text = v; App.changed(); } });
+        if (Sim.S && isBroken(c)) it('🛠 Réparer / remplacer ' + (c.props.tag || ''), () => repairComp(c));
         if (d.plot) it('📈 Ajouter au traceur', () => Plot.add(c));
         const fl = faultList(c);
         if (fl.length && !App.hideFaults) { sep(); hd('Défaillance simulée'); it((c.fault ? '' : '✔ ') + 'Aucune', () => { c.fault = null; App.changed(); }); fl.forEach(([k, l]) => it((c.fault === k ? '✔ ' : '') + l, () => { c.fault = k; App.changed(); })); }
@@ -2896,7 +2904,8 @@ const Props = {
     const el = $('#probe'); if (!el) return; const c = App.sel.size === 1 ? App.byId([...App.sel][0]) : null; if (!c) return;
     const d = DEFS[c.type]; if (!d.probe) { el.innerHTML = ''; return; }
     const o = d.probe.call(d, c, Sim.S); const ks = Object.keys(o); if (!ks.length) { el.innerHTML = ''; return; }
-    el.innerHTML = `<div class="kv">${ks.map(k => `<span>${esc(k)}</span><b>${esc(o[k])}</b>`).join('')}</div>`;
+    el.innerHTML = `<div class="kv">${ks.map(k => `<span>${esc(k)}</span><b>${esc(o[k])}</b>`).join('')}</div>` + (Sim.S && isBroken(c) ? `<div class="btns" style="margin-top:6px"><button class="btn" id="pRepair">🛠 Réparer / remplacer ${esc(c.props.tag || '')}</button></div>` : '');
+    const rb = $('#pRepair'); if (rb) rb.onclick = () => repairComp(c);
   },
   renderWire(el) {
     const w = App.wires.find(x => x.id === App.selWire); if (!w) { App.selWire = null; return this.render(); }
