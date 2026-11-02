@@ -554,12 +554,12 @@ def('hpump', {
     return { q, p, reg, ls, nr };
   },
   update(c, S) { const dry = !S.vent(c, 'S'); if (st(c).dry !== dry) { st(c).dry = dry; return true; } return false; },
-  sources(c) { const v = this.srcVal(c); const o = v.q > 0.01 ? [['P', 'hyd', v.p, v.q, 0, { reg: v.reg, ls: v.ls }]] : []; if (compPorts(c).some(p => p.id === 'L')) o.push(['L', 'tank']); return o; },
+  sources(c) { const v = this.srcVal(c); const o = v.q > 0.01 ? [['P', 'hyd', v.p, v.q, 0, { reg: v.reg, ls: v.ls, norel: true }]] : []; if (compPorts(c).some(p => p.id === 'L')) o.push(['L', 'tank']); return o; },
   step(c, S) {
     const s = st(c), v = this.srcVal(c); if (s.dry && v.nr > 0 && !s.warnDry) { s.warnDry = 1; S.stickyBanner = S.banner = '⚠ Pompe ' + c.props.tag + ' : aspiration S non reliée au réservoir — la pompe tourne à sec (cavitation, destruction)'; }
     if (!s.dry) s.warnDry = 0;
     const p = S.P(c, 'P'), lim = +c.props.padm || 250;
-    if (v.q > 0.01 && v.reg == null && p >= lim * 0.97 && !s.warnP) { s.warnP = 1; S.stickyBanner = S.banner = '💥 Pompe ' + c.props.tag + ' : ' + Math.round(p) + ' bar ≥ pression maxi admissible ' + lim + ' bar — aucun limiteur de pression ne protège le refoulement (casse pompe / flexibles)'; }
+    if (v.q > 0.01 && v.reg == null && p >= lim * 0.97 && !s.warnP) { s.warnP = 1; S.stickyBanner = S.banner = '💥 Pompe ' + c.props.tag + ' : ' + Math.round(p) + ' bar ≥ pression maxi admissible ' + lim + ' bar — aucun limiteur de pression ne protège le refoulement (casse pompe / flexibles)' + ((r => r ? ' : le limiteur ' + r.props.tag + ' est monté en série, son orifice T doit aller au réservoir' : '')(App.comps.find(o => o.type === 'relief' && st(o).ser))); }
     if (p < lim * 0.9) s.warnP = 0;
   },
   press(c) { if (c.props.ptype === 'variable') { c.props.cmd = ((+c.props.cmd || 0) >= 100 ? 0 : (+c.props.cmd || 0) + 25); Props.render(); return true; } },
@@ -928,7 +928,7 @@ def('cooler', {
     let k = +c.props.kw || 0; if (c.props.cool === 'air') k *= 0.5;
     if (c.props.cool !== 'air') { const run = c.props.cool === 'fan' && c.props.mot ? motRunning(c.props.mot) : true; if (c.fault === 'fan' || run === false) k *= c.props.cool === 'fan' ? 0.25 : 0.05; }
     if (c.fault === 'clog') k *= 0.35; if (c.fault === 'block' && c.props.bypass && c.props.medium !== 'pneu') k *= 0.1;
-    const wired = q => App.wires.some(w => (w.a.c === c.id && w.a.p === q) || (w.b.c === c.id && w.b.p === q)); if (!wired('1') || !wired('2')) k = 0; return k;
+    const wired = q => App.wires.some(w => (w.a.c === c.id && w.a.p === q) || (w.b.c === c.id && w.b.p === q)); if (!wired('1') || !wired('2')) k = 0; if (S && k && !(S.Q(c, '1') > 0.2 || S.vent(c, '1') || S.vent(c, '2'))) k = 0; return k;
   },
   draw(ctx, c, S) {
     const k = S ? this.eff(c, S) : 0, run = S && k > 0; ctx.strokeStyle = INK; ctx.lineWidth = 1.6;
@@ -954,20 +954,27 @@ def('relief', {
   name: 'Limiteur de pression (LP / anti-choc)', cat: 'Appareils de pression', w: 60, h: 80, ports: [P('P', 30, 80, 'h', 'P'), P('T', 30, 0, 'h', 'T')],
   portsFn(c) { const o = [P('P', 30, 80, 'h', 'P'), P('T', 30, 0, 'h', 'T')]; if (c.props.rpilot) o.push(P('X', 60, 40, 'h', 'X (pilotage à distance)')); return o; },
   defProps: { tag: '1V4', set: 100, vtag: '', rpilot: false }, fields: [TAGF, { k: 'set', label: 'Tarage — pression d\'ouverture (bar)', type: 'num' }, { k: 'rpilot', label: 'Action pilotée avec orifice X (pilotage à distance / mise à vide)', type: 'chk' }, { k: 'vtag', label: 'Mise à vide électrique : repère électro-aimant (vide = sans)', type: 'text' }, REFF],
-  update: xcapUpdate,
+  update(c, S) { // T non relié au réservoir : le limiteur est monté en série, il s'ouvre au tarage et alimente l'aval (ne protège plus la pompe)
+    let ch = xcapUpdate(c, S); const s = st(c), ser = !S.vent(c, 'T'); if (s.ser !== ser) { s.ser = ser; ch = true; }
+    let o = false; if (ser && c.fault !== 'stuck') { const set = c.fault === 'open' ? 3 : (+c.props.set || 100) * (c.fault === 'low' ? 0.4 : 1), i = S.info(c, 'P'); o = S.P(c, 'P') >= set * 0.98 || (!!s.sopen && i.src && !i.vent); }
+    if (!!s.sopen !== o) { s.sopen = o; ch = true; }
+    if (ser && !s.warned && S.info(c, 'P').src) { s.warned = 1; S.stickyBanner = S.banner = '⚠ Limiteur ' + (c.props.tag || '') + ' : orifice T non relié au réservoir — monté en série, il ne protège pas la pompe (le relier en dérivation sur P, avec T au réservoir)'; }
+    return ch;
+  },
+  links(c) { return st(c).ser && st(c).sopen ? [['P', 'T']] : []; },
   press(c) { ask('Tarage du limiteur ' + (c.props.tag || '') + ' (bar)', String(c.props.set)).then(v => { if (v != null && +v > 0) { c.props.set = +v; App.changed(); toast('Tarage : ' + (+v) + ' bar'); } }); return true; },
   hint: c => 'Cliquer : modifier le tarage (' + c.props.set + ' bar)',
   faults: [['open', 'Clapet bloqué ouvert (pollution sur le siège)'], ['stuck', 'Clapet grippé fermé : plus de protection'], ['low', 'Ressort affaibli : tarage trop bas']],
   bom: 'Limiteur de pression à action directe',
   cap(c, uf, m) { if (c.fault === 'stuck') return null; const t = m.get(uf.find(K(c, 'T'))); if (!t || !t.vent) return null; let v = +c.props.set || 100; if (c.props.vtag && !(Sim.S && Sim.S.tags[c.props.vtag])) v = 2; if (c.fault === 'open') v = 3; if (c.fault === 'low') v *= 0.4; if (st(c).xcap != null) v = Math.min(v, st(c).xcap); return ['P', v]; },
   draw(ctx, c, S) {
-    const open = S && S.P(c, 'P') >= (+c.props.set || 100) * 0.98 && S.vent(c, 'T');
+    const open = S && (st(c).ser ? !!st(c).sopen : S.P(c, 'P') >= (+c.props.set || 100) * 0.98 && S.vent(c, 'T'));
     ctx.strokeStyle = INK; ctx.lineWidth = 1.6; D.line(ctx, [30, 80, 30, 60]); D.line(ctx, [30, 20, 30, 0]);
     ctx.save(); ctx.translate(0, 0); drawPV(ctx, true, c.props.set, open); ctx.restore();
     D.dash(ctx, 1); D.line(ctx, [30, 70, 6, 70, 6, 56, 14, 56]); D.dash(ctx, 0); D.tri(ctx, 11, 56, 3, 'r', INK);
     if (c.props.rpilot) { ctx.strokeStyle = '#7c3aed'; D.dash(ctx, 1); D.line(ctx, [52, 32, 60, 32, 60, 40]); D.dash(ctx, 0); D.text(ctx, 'X', 54, 46, 8, '#7c3aed', 'center', true); }
   },
-  probe: (c, S) => ({ 'Pression amont': S ? fmt(S.P(c, 'P'), 1) + ' bar' : '—', 'État': S && S.P(c, 'P') >= (+c.props.set || 100) * 0.98 ? 'OUVERT (laminage)' : 'fermé' })
+  probe: (c, S) => ({ 'Pression amont': S ? fmt(S.P(c, 'P'), 1) + ' bar' : '—', 'Montage': st(c).ser ? 'EN SÉRIE (T non relié au réservoir) : ne protège pas la pompe' : 'en dérivation, T au réservoir', 'État': st(c).ser ? (st(c).sopen ? 'ouvert : alimente l\'aval' : 'fermé') : S && S.P(c, 'P') >= (+c.props.set || 100) * 0.98 ? 'OUVERT (laminage)' : 'fermé' })
 });
 def('reducer', {
   name: 'Réducteur / régulateur de pression', cat: 'Appareils de pression', w: 60, h: 80, ports: [P('P', 30, 80, 'f', 'entrée'), P('A', 30, 0, 'f', 'sortie réduite')],

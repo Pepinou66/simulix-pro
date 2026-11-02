@@ -114,6 +114,7 @@ table.grid td input:focus{border-color:var(--accent);outline:none}
 /* toast */
 #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1f2937;color:#fff;padding:8px 14px;border-radius:8px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:80;max-width:90%;text-align:center}
 #toast.show{opacity:1}
+#pzLeg{position:absolute;left:10px;bottom:10px;background:rgba(255,255,255,.95);border:1px solid #cbd5e1;border-radius:8px;padding:6px 9px;font-size:11px;display:none;flex-direction:column;gap:2px;z-index:4;box-shadow:0 2px 8px rgba(0,0,0,.08)}#pzLeg i{display:inline-block;width:18px;height:4px;border-radius:2px;margin-right:6px;vertical-align:middle}#pzLeg label{display:flex;align-items:center;gap:4px;margin-top:3px;color:#475569}#pzLeg input{width:auto;margin:0}
 #banner{position:absolute;left:50%;top:8px;transform:translateX(-50%);background:var(--err);color:#fff;font-weight:700;padding:5px 12px;border-radius:6px;display:none;z-index:5}
 /* seconde vue : scindée ou mini-fenêtre */
 .pane2{display:none;flex-direction:column;background:#fff;min-width:0;min-height:0}
@@ -193,6 +194,7 @@ table.grid td input:focus{border-color:var(--accent);outline:none}
       <div id="views"><canvas id="cv"></canvas><div id="pane2" class="pane2"><div class="p2h"><span class="p2t">Folio</span><select id="p2sel"></select><button id="p2fit" title="Ajuster">⤢</button><button id="p2close" title="Fermer">✕</button></div><canvas id="cv2"></canvas></div></div>
       <div id="modeTag">Édition</div>
       <div id="banner"></div>
+      <div id="pzLeg"><b>Pressions</b><span data-m="h"><i style="background:#dc2626"></i>HP — haute pression (&gt; 30 bar)</span><span data-m="h"><i style="background:#f59e0b"></i>BP — basse pression (gavage, pilotage, contre-pression)</span><span data-m="h"><i style="background:#2563eb"></i>R — retour réservoir</span><span data-m="p"><i style="background:#1677ff"></i>Air comprimé</span><span data-m="p"><i style="background:#93c5fd"></i>Échappement</span><span><i style="background:#64748b"></i>Sans pression</span><label><input type="checkbox" id="pzLab" checked> Étiquettes sur le schéma</label></div>
       <div id="tip"></div>
       <div id="zoomctl"><button id="zIn">+</button><button id="zOut">−</button><button id="zFit" title="Ajuster">⤢</button></div>
       <div id="sheets"></div>

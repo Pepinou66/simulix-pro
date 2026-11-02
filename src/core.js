@@ -126,6 +126,7 @@ function distSeg(p, a, b) { const dx = b.x - a.x, dy = b.y - a.y, l = dx * dx + 
 
 /* ===================== RENDU ===================== */
 const hms = t => { t = Math.floor(t || 0); const p = n => String(n).padStart(2, '0'); return p(Math.floor(t / 3600)) + ':' + p(Math.floor(t / 60) % 60) + ':' + p(t % 60); };
+document.addEventListener('change', e => { if (e.target && e.target.id === 'pzLab') { App.opts.pzLab = e.target.checked; } });
 const cv = $('#cv'), ctx = cv.getContext('2d');
 let DPR = 1, hoverPort = null, mouseW = { x: 0, y: 0 }, rubber = null;
 const View = {
@@ -149,6 +150,12 @@ function wireStyle(w, S) {
   if (w.color && (!S || w.keepColor)) { const base = S ? wireStyle0(w, S) : null; return [w.color, base ? base[1] : (k === 'h' ? 2.4 : 1.8), []]; }
   return wireStyle0(w, S);
 }
+const HP_MIN = 30; // bar : au-dessus = haute pression
+function pZone(c, p, S) { // zone de pression d'un orifice : HP / BP / R (retour) / 0 (sans pression) — air : AIR / ECH
+  const i = S.info(c, p), P = S.P(c, p), med = i.med || 'h';
+  if (med === 'p') return P > 0.05 ? 'AIR' : i.vent ? 'ECH' : '0';
+  if (P > HP_MIN) return 'HP'; if (P > 0.5) return i.vent && !i.lowp ? 'R' : 'BP'; return i.vent ? 'R' : '0';
+}
 function wireStyle0(w, S) {
   const k = w.kind;
   if (!S) return [WCOL[k] || '#334155', k === 'h' ? 2.2 : 1.6, k === 'f' ? [] : []];
@@ -161,7 +168,7 @@ function wireStyle0(w, S) {
   }
   if (k === 'l') return [S.L(c, p) ? '#16a34a' : '#475569', S.L(c, p) ? 2.6 : 1.6, []];
   const med = i.med || (k === 'h' ? 'h' : 'p'), P = S.P(c, p);
-  if (med === 'h') return P > 0.5 ? ['#dc2626', 3, []] : i.vent ? ['#2563eb', 2.4, []] : ['#64748b', 2.2, []];
+  if (med === 'h') { const z = pZone(c, p, S); return z === 'HP' ? ['#dc2626', 3, []] : z === 'BP' ? ['#f59e0b', 2.8, []] : z === 'R' ? ['#2563eb', 2.4, []] : ['#64748b', 2.2, []]; }
   return P > 0.05 ? ['#1677ff', 3, []] : i.vent ? ['#93c5fd', 2, []] : ['#64748b', 1.8, []];
 }
 function drawFrame(g) {
@@ -249,6 +256,22 @@ function drawScene(g, S, ui) {
     g.beginPath(); wp.pts.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); g.stroke(); g.setLineDash([]);
     if (nets && w.kind === 'e') { const n = nets.get(w.id); if (n) { const m = wp.pts[2]; D.text(g, n, m.x + 6, m.y - 7, 9, '#7c3aed', 'left', true); } }
     if (w.name) { const a = wp.pts[2], b2 = wp.pts[3] || a, mx = (a.x + b2.x) / 2, my = (a.y + b2.y) / 2; g.save(); g.font = '600 10px system-ui,sans-serif'; g.textAlign = 'center'; g.textBaseline = 'bottom'; g.lineJoin = 'round'; g.strokeStyle = 'rgba(255,255,255,.95)'; g.lineWidth = 4; g.strokeText(w.name, mx, my - 3); g.fillStyle = w.color || '#334155'; g.fillText(w.name, mx, my - 3); g.restore(); }
+  }
+  // étiquettes HP / BP / R : une par réseau, sur le plus long segment
+  if (S && ui && App.opts.pzLab !== false) {
+    const best = new Map();
+    for (const w of App.wires) {
+      if (!ids.has(w.a.c) || w.kind === 'e' || w.kind === 'l' || w.cut) continue; const c = App.byId(w.a.c); if (!c) continue; const i = S.info(c, w.a.p); if (w.kind === 'x' && !i.med) continue;
+      const wp = wirePts(w); if (!wp) continue; let L = -1, m = null;
+      for (let j = 1; j < wp.pts.length - 2; j++) { const a = wp.pts[j], b = wp.pts[j + 1], l = Math.hypot(b.x - a.x, b.y - a.y); if (l > L) { L = l; m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, v: Math.abs(a.x - b.x) < 0.5 }; } }
+      const r = S.root(c, w.a.p), o = best.get(r); if (m && (!o || L > o.L)) best.set(r, { L, m, c, p: w.a.p });
+    }
+    for (const { L, m, c, p } of best.values()) {
+      if (L < 24) continue; const z = pZone(c, p, S), P = S.P(c, p); if (z === '0') continue;
+      const txt = { HP: 'HP ', BP: 'BP ', R: 'R ', AIR: 'P ', ECH: 'Éch.' }[z] + (z === 'ECH' || (z === 'R' && P < 0.5) ? '' : fmt(P, P < 10 ? 1 : 0) + ' bar'), col = { HP: '#dc2626', BP: '#d97706', R: '#2563eb', AIR: '#1677ff', ECH: '#60a5fa' }[z];
+      g.save(); g.font = '700 9px system-ui,sans-serif'; const tw = g.measureText(txt).width + 8, x = m.v ? m.x + 5 : m.x - tw / 2, y = m.v ? m.y - 6 : m.y - 15;
+      g.fillStyle = '#fff'; g.strokeStyle = col; g.lineWidth = 1; g.beginPath(); g.roundRect(x, y, tw, 12, 3); g.fill(); g.stroke(); g.fillStyle = col; g.textBaseline = 'middle'; g.fillText(txt, x + 4, y + 6.5); g.restore();
+    }
   }
   // nœuds de jonction automatiques (≥3 fils sur un même port)
   const cnt = new Map(); App.wires.forEach(w => [w.a, w.b].forEach(r => { const k = r.c + ':' + r.p; cnt.set(k, (cnt.get(k) || 0) + 1); }));
@@ -731,6 +754,7 @@ const Ctl = {
     const sim = !!Sim.S;
     $('#bRun').disabled = App.running; $('#bPause').disabled = !App.running; $('#bStep').disabled = App.running; $('#bStop').disabled = !sim;
     ['#bUndo', '#bRedo', '#bRot', '#bDup', '#bDel', '#bNew', '#bOpen'].forEach(s => $(s).disabled = sim);
+    { const hasH = App.wires.some(w => w.kind === 'h'), hasP = App.wires.some(w => w.kind === 'p'); $('#pzLeg').style.display = sim && (hasH || hasP) ? 'flex' : 'none'; document.querySelectorAll('#pzLeg [data-m]').forEach(e => e.style.display = (e.dataset.m === 'h' ? hasH : hasP) ? '' : 'none'); }
     $('#modeTag').textContent = sim ? (App.running ? '● Simulation en cours' : '❚❚ Simulation en pause') : 'Édition';
     $('#modeTag').style.color = sim ? '#15803d' : '';
     $('#bTrouble').classList.toggle('on', App.hideFaults);

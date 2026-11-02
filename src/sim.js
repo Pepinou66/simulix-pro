@@ -99,7 +99,7 @@ const Sim = {
         else if (t === '+') { (o.pots = o.pots || []).push({ sys: c.id, re: 0, im: 0, dc: 24, ph: '+' }); o.plus = true; o.sup.push(c); }
         else if (t === '0') { (o.pots = o.pots || []).push({ sys: c.id, re: 0, im: 0, dc: 0, ph: '0' }); o.zero = true; o.sup.push(c); }
         else if (t === 'pneu') { o.pr = Math.max(o.pr, v); o.src = true; o.med = 'p'; }
-        else if (t === 'hyd') { o.pr = Math.max(o.pr, v); o.q += q; o.src = true; o.med = 'h'; o.plage = Math.max(o.plage, pl || 0); if (ex && ex.reg != null) o.reg = Math.min(o.reg ?? 1e9, ex.reg); if (ex && ex.ls != null) o.ls = ex.ls; }
+        else if (t === 'hyd') { o.pr = Math.max(o.pr, v); o.q += q; o.src = true; o.med = 'h'; o.plage = Math.max(o.plage, pl || 0); if (ex && ex.reg != null) o.reg = Math.min(o.reg ?? 1e9, ex.reg); if (ex && ex.ls != null) o.ls = ex.ls; if (ex && ex.norel) o.norel = true; else o.hasRel = true; }
         else if (t === 'lowp') { o.vent = true; o.med = 'h'; o.lowp = Math.max(o.lowp, v); }
         else if (t === 'vent') { o.vent = true; o.med = o.med || 'p'; }
         else if (t === 'tank') { o.vent = true; o.med = 'h'; }
@@ -181,7 +181,7 @@ const Sim = {
         let p = n ? Math.min(pS, pmin + 2) : pFull;
         if (n && (throttled || byp > 0.01)) p = pS + (pFull - pS) * (byp / info.q);
         dispP.set(root, p);
-        if (byp > 0.01 && p >= pS - 0.5) lam.set(root, byp * p / 600);
+        if (byp > 0.01 && p >= pS - 0.5 && !(info.norel && !info.hasRel && info.cap == null)) lam.set(root, byp * p / 600);
       } else {
         for (const [c, r] of moving) {
           const f = Math.min(S.R(c, r.feed), r.out ? S.R(c, r.out) : 1), k = Math.sqrt(clamp(1 - r.preq / pS, 0, 1)) * (1 - (r.leak || 0));
@@ -193,6 +193,7 @@ const Sim = {
     // laminage au limiteur quand aucun récepteur n'est alimenté (centre fermé, vérin en butée)
     for (const [r, i] of S.net) if (i.src && !i.vent && i.med === 'h' && !groups.has(r)) {
       if (i.ls != null) dispP.set(r, i.ls); else if (i.reg != null) dispP.set(r, Math.min(i.reg, i.pr));
+      else if (i.norel && !i.hasRel && i.cap == null) dispP.set(r, i.pr); // pompe seule sans limiteur : la pression monte jusqu'à la casse, pas de laminage
       else { dispP.set(r, i.pr * (1 + (i.plage || 0))); lam.set(r, i.q * i.pr * (1 + (i.plage || 0)) / 600); }
     }
     // pression créée par la charge dans une chambre isolée (fiche F05K : p = F / S)

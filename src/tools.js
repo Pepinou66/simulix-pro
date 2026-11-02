@@ -117,6 +117,7 @@ const Eng = {
     if (has(['coil', 'lamp', 'sol', 'motor', 'plc', 'conveyor']) && !has(['supply'])) add('err', null, 'Aucune alimentation électrique dans le projet');
     if (App.comps.some(c => c.props.medium === 'pneu' && DEFS[c.type].isActuator) && !has(['compressor'])) add('err', null, 'Aucune source d\'air comprimé');
     if (App.comps.some(c => c.props.medium === 'hyd' && DEFS[c.type].isActuator) && !has(['pump', 'hpump', 'pumpvar'])) add('err', null, 'Aucun groupe hydraulique ni pompe');
+    App.comps.filter(c => c.type === 'relief').forEach(c => { const tk = new Set(App.comps.filter(o => o.type === 'tank' || o.type === 'pump').map(o => o.id)); const w = App.wires.find(w => (w.a.c === c.id && w.a.p === 'T') || (w.b.c === c.id && w.b.p === 'T')); const other = w && (w.a.c === c.id ? w.b.c : w.a.c); if (!w) add('err', c, 'Orifice T du limiteur non raccordé'); else if (!tk.has(other)) add('warn', c, 'Orifice T du limiteur non relié directement au réservoir : un limiteur se monte en dérivation sur P, T au réservoir'); });
     App.comps.filter(c => c.type === 'hpump' && (c.props.ptype || 'fixe') !== 'regp' && !App.comps.some(o => o.type === 'relief')).forEach(c => add('err', c, 'Pompe seule sans limiteur de pression dans le circuit : prévoir un limiteur sur le refoulement'));
     // calculs de dimensionnement
     const calc = App.comps.filter(c => c.type === 'cyl').map(c => {
