@@ -1,0 +1,7 @@
+node_modules/
+desktop/dist/
+dist/
+deliver/
+test/
+
+*.log

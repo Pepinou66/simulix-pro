@@ -1,0 +1,78 @@
+{
+  "name": "simulix-pro",
+  "productName": "Simulix Pro",
+  "version": "1.2.0",
+  "description": "Conception et simulation de systèmes automatisés : pneumatique, hydraulique, électrique, automate, logique",
+  "main": "main.js",
+  "author": "Simulix",
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win --x64"
+  },
+  "build": {
+    "appId": "fr.simulix.pro",
+    "productName": "Simulix Pro",
+    "files": [
+      "main.js",
+      "preload.js",
+      "modbus.js",
+      "updater.js",
+      "app/**/*",
+      "build/icon.png"
+    ],
+    "fileAssociations": [
+      {
+        "ext": "sxp",
+        "name": "Projet Simulix",
+        "description": "Projet Simulix Pro",
+        "role": "Editor"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Simulix Pro",
+      "language": "1036",
+      "artifactName": "Simulix-Pro-Setup-${version}.exe"
+    },
+    "portable": {
+      "artifactName": "Simulix-Pro-Portable-${version}.exe"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Pepinou66",
+        "repo": "simulix-pro",
+        "releaseType": "release"
+      }
+    ]
+  },
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.11"
+  },
+  "repository": "https://github.com/Pepinou66/simulix-pro"
+}
