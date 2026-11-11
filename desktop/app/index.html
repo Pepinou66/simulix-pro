@@ -326,7 +326,7 @@ function store(k, v) { try { if (v === undefined) return localStorage.getItem(k)
      ouverture de projets, recherche de mise à jour (APK sur GitHub Releases) ;
    - version web installable (PWA, Android et iPhone/iPad) : service worker.
    ===================================================================== */
-const SIMULIX_VERSION = '2.2.0';
+const SIMULIX_VERSION = '2.2.1';
 (function () {
   const C = window.Capacitor, native = !!(C && C.isNativePlatform && C.isNativePlatform());
   if (native) {
@@ -2467,7 +2467,7 @@ const App = {
   uid() { return 'c' + (this.nid++); },
   sheetComps() { return this.comps.filter(c => (c.sheet || 0) === this.sheet); },
   byId(id) { return this.comps.find(c => c.id === id); },
-  changed(commit) { if (commit !== false) this.commit(); if (Sim.S && !this.running) { try { Sim.tick(1e-6); } catch (e) { console.error(e); } } Props.render(); }, // en pause : recalcul immédiat des pressions après un réglage
+  changed(commit) { this.layoutVer = (this.layoutVer || 0) + 1; if (commit !== false) this.commit(); if (Sim.S && !this.running) { try { Sim.tick(1e-6); } catch (e) { console.error(e); } } Props.render(); }, // en pause : recalcul immédiat des pressions après un réglage
   serialize() {
     return JSON.stringify({ app: 'Simulix Pro', version: 1, project: this.project, opts: this.opts, sheets: this.sheets, hideFaults: this.hideFaults, lib: this.lib,
       comps: this.comps.map(c => ({ id: c.id, type: c.type, x: c.x, y: c.y, rot: c.rot || 0, sheet: c.sheet || 0, props: c.props, fault: c.fault || null })),
@@ -2561,10 +2561,52 @@ function wirePts(w) {
     return { pts: [A, s1, ...mid, s2, B], seg, free: true };
   }
   let mid;
-  if (va && vb) { const my = w.mo ?? (s1.y + s2.y) / 2; mid = [{ x: s1.x, y: my }, { x: s2.x, y: my }]; }
-  else if (!va && !vb) { const mx = w.mo ?? (s1.x + s2.x) / 2; mid = [{ x: mx, y: s1.y }, { x: mx, y: s2.y }]; }
-  else if (va) mid = [{ x: s1.x, y: s2.y }]; else mid = [{ x: s2.x, y: s1.y }];
+  if (w.mo != null) { // ancien réglage manuel du segment central
+    if (va && vb) mid = [{ x: s1.x, y: w.mo }, { x: s2.x, y: w.mo }]; else if (!va && !vb) mid = [{ x: w.mo, y: s1.y }, { x: w.mo, y: s2.y }];
+    else if (va) mid = [{ x: s1.x, y: s2.y }]; else mid = [{ x: s2.x, y: s1.y }];
+    return { pts: [A, s1, ...mid, s2, B], vert: va && vb, horiz: !va && !vb };
+  }
+  mid = autoRoute(w, A, B, s1, s2);
   return { pts: [A, s1, ...mid, s2, B], vert: va && vb, horiz: !va && !vb };
+}
+/* Tracé automatique : on essaie plusieurs chemins orthogonaux et on garde le meilleur
+   (court, peu de coudes, sans repasser dans les composants raccordés ni revenir sur le départ d'un orifice). */
+const ROUTE_CACHE = new Map();
+function autoRoute(w, A, B, s1, s2) {
+  const ca = App.byId(w.a.c), cb = App.byId(w.b.c), bb = c => { if (!c || c.type === 'node' || DEFS[c.type].isFrame) return null; const b = compBBox(c); return { x0: b.x, y0: b.y, x1: b.x + b.w, y1: b.y + b.h }; };
+  const ra = bb(ca), rb = bb(cb), key = [A.x, A.y, A.d, B.x, B.y, B.d, ra && [ra.x0, ra.y0, ra.x1, ra.y1], rb && [rb.x0, rb.y0, rb.x1, rb.y1], App.layoutVer || 0].join();
+  const hit = ROUTE_CACHE.get(w.id); if (hit && hit.key === key) return hit.mid;
+  const M = 14, zx0 = Math.min(s1.x, s2.x) - 80, zx1 = Math.max(s1.x, s2.x) + 80, zy0 = Math.min(s1.y, s2.y) - 80, zy1 = Math.max(s1.y, s2.y) + 80;
+  // obstacles : les deux composants raccordés + ceux qui se trouvent dans la zone du tracé
+  const others = App.sheetComps().filter(c => c !== ca && c !== cb && c.type !== 'text' && !DEFS[c.type].isFrame && c.type !== 'node' && c.type !== 'offpage').map(bb).filter(r => r && r.x1 > zx0 && r.x0 < zx1 && r.y1 > zy0 && r.y0 < zy1).slice(0, 12);
+  const rects = [ra, rb, ...others].filter(Boolean);
+  const dv = d => ({ u: [0, -1], d: [0, 1], l: [-1, 0], r: [1, 0] })[d] || null, da = dv(A.d), db = dv(B.d);
+  const ys = new Set([s1.y, s2.y, Math.round((s1.y + s2.y) / 2)]), xs = new Set([s1.x, s2.x, Math.round((s1.x + s2.x) / 2)]);
+  rects.forEach(r => { ys.add(r.y0 - M); ys.add(r.y1 + M); xs.add(r.x0 - M); xs.add(r.x1 + M); });
+  const cands = [[], [{ x: s2.x, y: s1.y }], [{ x: s1.x, y: s2.y }]];
+  ys.forEach(y => cands.push([{ x: s1.x, y }, { x: s2.x, y }])); xs.forEach(x => cands.push([{ x, y: s1.y }, { x, y: s2.y }]));
+  ys.forEach(y => xs.forEach(x => { cands.push([{ x: s1.x, y }, { x, y }, { x, y: s2.y }]); cands.push([{ x, y: s1.y }, { x, y }, { x: s2.x, y }]); }));
+  const cross = (a, b, r) => { // le segment traverse l'intérieur du rectangle
+    const e = 1; if (a.x === b.x) { const y0 = Math.min(a.y, b.y), y1 = Math.max(a.y, b.y); return a.x > r.x0 + e && a.x < r.x1 - e && y1 > r.y0 + e && y0 < r.y1 - e; }
+    const x0 = Math.min(a.x, b.x), x1 = Math.max(a.x, b.x); return a.y > r.y0 + e && a.y < r.y1 - e && x1 > r.x0 + e && x0 < r.x1 - e;
+  };
+  let best = null, bs = Infinity;
+  for (const mid of cands) {
+    const P = [s1, ...mid, s2].filter((q, i, a) => i === 0 || q.x !== a[i - 1].x || q.y !== a[i - 1].y);
+    let ok = true, len = 0, bends = 0, pen = 0, pd = null;
+    for (let i = 0; i < P.length - 1; i++) {
+      const a = P[i], b = P[i + 1]; if (a.x !== b.x && a.y !== b.y) { ok = false; break; }
+      const l = Math.abs(a.x - b.x) + Math.abs(a.y - b.y), d = [Math.sign(b.x - a.x), Math.sign(b.y - a.y)]; len += l;
+      if (pd) { if (d[0] !== pd[0] || d[1] !== pd[1]) bends++; if (d[0] === -pd[0] && d[1] === -pd[1]) pen += 3000; }
+      if (i === 0 && da && d[0] === -da[0] && d[1] === -da[1]) pen += 3000; // repart à l'envers dans le départ de l'orifice
+      if (i === P.length - 2 && db && d[0] === db[0] && d[1] === db[1]) pen += 3000; // arrive par l'intérieur
+      rects.forEach((r, k) => { if (cross(a, b, r)) pen += k < 2 ? 2000 : 800; }); pd = d;
+    }
+    if (!ok) continue; const sc = len + bends * 25 + pen;
+    if (sc < bs) { bs = sc; best = P.slice(1, -1); }
+  }
+  best = best || [{ x: s1.x, y: s2.y }];
+  ROUTE_CACHE.set(w.id, { key, mid: best }); return best;
 }
 function routeOf(wp) { // convertit un tracé (auto) en tracé libre éditable
   const L = wp.pts.slice(1, -1), seg = [];
