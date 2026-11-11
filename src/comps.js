@@ -665,8 +665,11 @@ function valveFields() {
     F.push({ k: 'cyl' + S_, label: 'Galet ' + n + ' : vérin', type: 'text', when: c => hasA(c, S_, 'roller') });
     F.push({ k: 'cpos' + S_, label: 'Galet ' + n + ' : position', type: 'sel', opts: ['rentré', 'sorti'], when: c => hasA(c, S_, 'roller') });
   });
+  F.push({ k: 'prop', label: 'Distributeur proportionnel (ouverture progressive)', type: 'chk' });
+  F.push({ k: 'ouv', label: 'Consigne d\'ouverture (%) — carte électronique / potentiomètre', type: 'range', when: c => c.props.prop });
   F.push(REFF); return F;
 }
+const propFrac = c => c.props.prop ? clamp((+c.props.ouv || 0) / 100, 0.02, 1) : 1; // ouverture d'un distributeur proportionnel
 def('valve', {
   name: 'Distributeur', cat: null, h: 80,
   size(c) { return { w: aw(c, 'L') + vt(c).boxes.length * BW + aw(c, 'R'), h: 80 }; },
@@ -686,7 +689,7 @@ def('valve', {
     if (c.fault === 'solHS') f.push(['solHS', 'Électro-aimants défectueux']);
     f.push(['leak', 'Fuite interne du tiroir']); return f;
   },
-  bom: c => 'Distributeur ' + vt(c).name + (c.props.medium === 'hyd' ? ' hydraulique' : ' pneumatique'),
+  bom: c => 'Distributeur ' + (c.props.prop ? 'proportionnel ' : '') + vt(c).name + (c.props.medium === 'hyd' ? ' hydraulique' : ' pneumatique'),
   init(c) { const s = st(c); s.pos = vRest(c); s.man = { L: false, R: false }; },
   update(c, S) {
     const s = st(c), V = vt(c), nb = V.boxes.length; if (s.pos == null) this.init(c);
@@ -700,12 +703,12 @@ def('valve', {
     }
     if (pos !== s.pos) { s.pos = pos; return true; } return false;
   },
-  links(c) { const s = st(c), V = vt(c); const l = (V.boxes[s.pos ?? 1] || []).map(x => [x[0], x[1]]); if (c.fault === 'leak') { const all = V.top.concat(V.bot).map(p => p[0]); l.push([all[0], all[all.length - 1], 0.15]); } return l; },
+  links(c) { const s = st(c), V = vt(c), pf = c.props.prop && (s.pos ?? 1) !== vRest(c) ? propFrac(c) : 1; const l = (V.boxes[s.pos ?? 1] || []).map(x => pf < 1 ? [x[0], x[1], pf] : [x[0], x[1]]); if (c.fault === 'leak') { const all = V.top.concat(V.bot).map(p => p[0]); l.push([all[0], all[all.length - 1], 0.15]); } return l; },
   sources(c) { return c.props.medium === 'hyd' ? [] : (vt(c).vent || []).map(p => [p, 'vent']); },
   // clic côté gauche / droit : bouton maintenu, levier à crans, ou commande manuelle de secours
   // (électro-aimant, pilotage, galet) tant que le clic est maintenu
   // zone cliquable : boutons fixes sous les commandes + commandes à leur position animée (le tiroir glisse)
-  vShift(c) { return (vRest(c) - (st(c).pos ?? 1)) * BW; },
+  vShift(c) { return (vRest(c) - (st(c).pos ?? 1)) * BW * propFrac(c); },
   extraRects(c) { return [{ x: this.vShift(c), y: 0, w: this.size(c).w, h: 80 }]; },
   pressSide(c, x, y) {
     const { w } = this.size(c); let side;
@@ -724,7 +727,7 @@ def('valve', {
   hint(c, x, y) { const side = this.pressSide(c, x, y); if (!side) return 'Rappel par ressort'; const a = c.props['a' + side], n = side === 'L' ? 'gauche' : 'droite'; if (a === 'lever') return 'Cliquer : basculer le levier ' + n; if (a === 'button') return 'Maintenir : bouton ' + n; if (a === 'sol' || hasA(c, side, 'sol')) return 'Maintenir : commande manuelle de l\'électro-aimant ' + (c.props['t' + side] || n); if (isPil(a)) return 'Maintenir : commande manuelle du pilotage ' + n; return 'Maintenir : actionner le galet ' + n; },
   draw(ctx, c, S) {
     const V = vt(c), nb = V.boxes.length, s = st(c), pos = s.pos ?? 1, AWL = aw(c, 'L'), w = this.size(c).w, hyd = c.props.medium === 'hyd';
-    const shift = (vRest(c) - pos) * BW; // les cases glissent pour aligner la position active sur les orifices
+    const shift = (vRest(c) - pos) * BW * propFrac(c); // les cases glissent pour aligner la position active sur les orifices (partiellement pour un proportionnel)
     ctx.strokeStyle = INK; ctx.lineWidth = 1.6;
     const x0r = AWL + vRest(c) * BW;
     // orifices (fixes)
@@ -747,7 +750,12 @@ def('valve', {
       V.top.concat(V.bot).forEach(([id]) => { if (used.has(id)) return; const [x, sd] = px(id); const y = sd === 'top' ? 20 : 60, d = sd === 'top' ? 1 : -1; D.line(ctx, [x, y, x, y + 8 * d]); D.line(ctx, [x - 5, y + 8 * d, x + 5, y + 8 * d]); });
     }
     drawActuators(ctx, c, 'L', AWL, S); drawActuators(ctx, c, 'R', AWL + nb * BW, S);
+    if (c.props.prop) { // symbole proportionnel : traits parallèles au-dessus et en dessous des cases, flèche oblique sur les électro-aimants
+      ctx.strokeStyle = INK; ctx.lineWidth = 1.2; D.line(ctx, [AWL, 15, AWL + nb * BW, 15]); D.line(ctx, [AWL, 65, AWL + nb * BW, 65]);
+      if (hasA(c, 'L', 'sol')) D.arrow(ctx, AWL - 19, 53, AWL + 3, 27, 4); if (hasA(c, 'R', 'sol')) D.arrow(ctx, AWL + nb * BW - 3, 53, AWL + nb * BW + 19, 27, 4);
+    }
     ctx.restore();
+    if (c.props.prop) D.text(ctx, (S && (st(c).pos ?? 1) !== vRest(c) ? '▶ ' : '') + Math.round(+c.props.ouv || 0) + ' %', w / 2, 8, 8, '#7c3aed', 'center', true);
     ['L', 'R'].forEach(sd => { const i = acts(c, sd).findIndex(isPil); if (i < 0) return; const e = sd === 'L' ? AWL + shift - 15 - i * 24 : AWL + nb * BW + shift + 15 + i * 24; const pk = pilotKind(c, sd); ctx.strokeStyle = pk === 'h' ? '#b91c1c' : '#2563eb'; D.dash(ctx, 1); D.line(ctx, [sd === 'L' ? 0 : w, 40, e, 40]); D.dash(ctx, 0); });
     V.top.forEach(([id, x]) => D.text(ctx, id, x0r + x + 7, 9, 8, '#64748b'));
     V.bot.forEach(([id, x]) => D.text(ctx, id, x0r + x + 7, 72, 8, '#64748b'));
@@ -1316,6 +1324,9 @@ const PALETTE = [
     ['cyl', 'Vérin simple effet', { medium: 'hyd', single: true, bore: 50, rod: 36, stroke: 200 }],
     ['valve', 'Distributeur 4/3 levier tandem', { vt: 'v43t', medium: 'hyd', aL: 'lever', aR: 'lever', tag: '1V1' }],
     ['valve', 'Distributeur 4/3 élec. centre fermé', { vt: 'v43c', medium: 'hyd', aL: 'sol', aR: 'sol', tL: 'Y1', tR: 'Y2' }],
+    ['valve', 'Distributeur proportionnel 4/3 centre fermé', { vt: 'v43c', medium: 'hyd', aL: 'sol', aR: 'sol', tL: 'Y1', tR: 'Y2', prop: true, ouv: 50 }],
+    ['valve', 'Distributeur proportionnel 4/3 centre tandem', { vt: 'v43t', medium: 'hyd', aL: 'sol', aR: 'sol', tL: 'Y1', tR: 'Y2', prop: true, ouv: 50 }],
+    ['valve', 'Distributeur proportionnel 4/3 à levier', { vt: 'v43c', medium: 'hyd', aL: 'lever', aR: 'lever', prop: true, ouv: 50 }],
     ['valve', 'Distributeur 4/3 élec. tandem', { vt: 'v43t', medium: 'hyd', aL: 'sol', aR: 'sol', tL: 'Y1', tR: 'Y2' }],
     ['valve', 'Distributeur 4/2 élec.', { vt: 'v42', medium: 'hyd', aL: 'sol', aR: 'spring', tL: 'Y1' }],
     ['valve', 'Distributeur 2/2 élec.', { vt: 'v22', medium: 'hyd', aL: 'sol', aR: 'spring', tL: 'Y3' }],

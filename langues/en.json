@@ -817,6 +817,17 @@
   "Supprimer": "Delete",
   "Réglages": "Settings",
   "Plus": "More",
-  "Biblio": "Library"
+  "Biblio": "Library",
+  "Distributeur proportionnel (ouverture progressive)": "Proportional valve (progressive opening)",
+  "Consigne d'ouverture (%) — carte électronique / potentiomètre": "Opening setpoint (%) — amplifier card / potentiometer",
+  "Distributeur proportionnel #/# centre fermé": "Proportional valve #/# closed centre",
+  "Distributeur proportionnel #/# centre tandem": "Proportional valve #/# tandem centre",
+  "Distributeur proportionnel #/# à levier": "Proportional valve #/# lever",
+  "⧉ Dupliquer le folio": "⧉ Duplicate sheet",
+  "🗑 Supprimer ce folio": "🗑 Delete this sheet",
+  "Double-clic pour renommer · clic droit : options": "Double-click to rename · right-click: options",
+  "Liaison annulée": "Link cancelled",
+  "Nœud ajouté sur le cadre : reliez-y vos liaisons": "Node added on the frame: connect your links to it",
+  "Cliquez dans le vide pour poser des points de passage (tracé libre), puis sur l'orifice d'arrivée — Échap / clic droit : annuler": "Click on empty space to add waypoints (free routing), then on the target port — Esc / right-click: cancel"
  }
 }
