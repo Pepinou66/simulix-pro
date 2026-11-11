@@ -122,6 +122,19 @@ function routeOf(wp) { // convertit un tracé (auto) en tracé libre éditable
 }
 function shiftRoute(r, dx, dy) { return { o: r.o, v: r.v.map((c, i) => { const o = (i + 1) % 2 ? (r.o === 'v' ? 'h' : 'v') : r.o; return c + (o === 'v' ? dx : dy); }) }; }
 function wireSegAt(w, p) { const wp = wirePts(w); if (!wp) return -1; const tol = 6 / App.view.s; let best = -1, bd = 1e9; for (let i = 0; i < wp.pts.length - 1; i++) { const d = distSeg(p, wp.pts[i], wp.pts[i + 1]); if (d < tol && d < bd) { bd = d; best = i; } } return best; }
+// point où deux tracés partant du même orifice se séparent (null s'ils ne partagent rien)
+function splitPoint(P, Q) {
+  const clean = A => A.filter((q, i) => i === 0 || Math.abs(q.x - A[i - 1].x) > 0.01 || Math.abs(q.y - A[i - 1].y) > 0.01);
+  P = clean(P); Q = clean(Q); let pos = { x: P[0].x, y: P[0].y }, ia = 1, ib = 1, moved = false;
+  while (ia < P.length && ib < Q.length) {
+    const la = Math.hypot(P[ia].x - pos.x, P[ia].y - pos.y), lb = Math.hypot(Q[ib].x - pos.x, Q[ib].y - pos.y);
+    if (la < 0.01) { ia++; continue; } if (lb < 0.01) { ib++; continue; }
+    const ax = (P[ia].x - pos.x) / la, ay = (P[ia].y - pos.y) / la, bx = (Q[ib].x - pos.x) / lb, by = (Q[ib].y - pos.y) / lb;
+    if (Math.abs(ax - bx) > 0.01 || Math.abs(ay - by) > 0.01) return moved ? pos : null;
+    const st = Math.min(la, lb); pos = { x: pos.x + ax * st, y: pos.y + ay * st }; moved = true;
+  }
+  return moved ? pos : null;
+}
 function distSeg(p, a, b) { const dx = b.x - a.x, dy = b.y - a.y, l = dx * dx + dy * dy; let t = l ? ((p.x - a.x) * dx + (p.y - a.y) * dy) / l : 0; t = clamp(t, 0, 1); return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy); }
 
 /* ===================== RENDU ===================== */
@@ -212,7 +225,7 @@ function render() {
   g.setTransform(DPR * v.s, 0, 0, DPR * v.s, DPR * v.ox, DPR * v.oy);
   drawScene(g, S, true);
   if (rubber) { g.strokeStyle = '#0f62fe'; g.lineWidth = 1 / v.s; g.setLineDash([4 / v.s, 3 / v.s]); g.fillStyle = 'rgba(15,98,254,.06)'; const x = Math.min(rubber.x0, rubber.x1), y = Math.min(rubber.y0, rubber.y1); g.fillRect(x, y, Math.abs(rubber.x1 - rubber.x0), Math.abs(rubber.y1 - rubber.y0)); g.strokeRect(x, y, Math.abs(rubber.x1 - rubber.x0), Math.abs(rubber.y1 - rubber.y0)); g.setLineDash([]); }
-  if (App.wiring) { const A = portRef(App.wiring); if (A) { g.strokeStyle = '#0f62fe'; g.lineWidth = 1.5 / v.s; g.setLineDash([5 / v.s, 4 / v.s]); g.beginPath(); g.moveTo(A.x, A.y); g.lineTo(mouseW.x, A.y); g.lineTo(mouseW.x, mouseW.y); g.stroke(); g.setLineDash([]); } }
+  if (App.wiring) { const A = portRef(App.wiring); if (A) { g.strokeStyle = '#0f62fe'; g.lineWidth = 1.5 / v.s; g.setLineDash([5 / v.s, 4 / v.s]); const P = manualPath(A, A, App.wiring.pts || [], null); const m = { x: snap(mouseW.x), y: snap(mouseW.y) }, l = P[P.length - 1]; P.push({ x: m.x, y: l.y }, m); g.beginPath(); P.forEach((q, i) => i ? g.lineTo(q.x, q.y) : g.moveTo(q.x, q.y)); g.stroke(); g.setLineDash([]); g.fillStyle = '#0f62fe'; (App.wiring.pts || []).forEach(q => { g.beginPath(); g.arc(q.x, q.y, 3 / v.s, 0, 7); g.fill(); }); } }
   if (App.placing && !S) { const d = DEFS[App.placing.type]; const tmp = { type: App.placing.type, props: Object.assign({}, d.defProps, App.placing.props), rot: 0, state: {} }; const { w, h } = compSize(tmp); g.save(); g.globalAlpha = .45; g.translate(snap(mouseW.x - w / 2), snap(mouseW.y - h / 2)); d.draw(g, tmp, null); g.restore(); }
 }
 let badges = [], labelRects = [];
@@ -258,6 +271,14 @@ function drawScene(g, S, ui) {
     if (nets && w.kind === 'e') { const n = nets.get(w.id); if (n) { const m = wp.pts[2]; D.text(g, n, m.x + 6, m.y - 7, 9, '#7c3aed', 'left', true); } }
     if (w.name) { const a = wp.pts[2], b2 = wp.pts[3] || a, mx = (a.x + b2.x) / 2, my = (a.y + b2.y) / 2; g.save(); g.font = '600 10px system-ui,sans-serif'; g.textAlign = 'center'; g.textBaseline = 'bottom'; g.lineJoin = 'round'; g.strokeStyle = 'rgba(255,255,255,.95)'; g.lineWidth = 4; g.strokeText(w.name, mx, my - 3); g.fillStyle = w.color || '#334155'; g.fillText(w.name, mx, my - 3); g.restore(); }
   }
+  // liaisons qui se rejoignent sur un même orifice : point de jonction là où les tracés se séparent
+  { const byPort = new Map();
+    for (const w of App.wires) { if (!ids.has(w.a.c)) continue; [['a', w.a], ['b', w.b]].forEach(([e, r]) => { const k = r.c + ':' + r.p; if (!byPort.has(k)) byPort.set(k, []); byPort.get(k).push([w, e]); }); }
+    const dots = [];
+    for (const list of byPort.values()) { if (list.length < 2) continue;
+      const polys = list.map(([w, e]) => { const wp = wirePts(w); if (!wp) return null; const P = wp.pts.slice(); return e === 'a' ? P : P.reverse(); }).filter(Boolean);
+      for (let i = 0; i < polys.length; i++) for (let j = i + 1; j < polys.length; j++) { const q = splitPoint(polys[i], polys[j]); if (q && Math.hypot(q.x - polys[i][0].x, q.y - polys[i][0].y) > 12) dots.push(q); } }
+    g.fillStyle = S ? '#334155' : INK; dots.forEach(q => { g.beginPath(); g.arc(q.x, q.y, 3.5, 0, 7); g.fill(); }); }
   // étiquettes HP / BP / R : une par réseau, sur le plus long segment
   if (S && ui && App.opts.pzLab !== false) {
     const best = new Map();
@@ -373,12 +394,16 @@ cv.addEventListener('pointerdown', e => {
   }
   const hp = hitPort(p);
   if (hp && App.tool !== 'pan') {
-    if (!App.wiring) { App.wiring = { c: hp.c.id, p: hp.p.id }; return; }
+    if (!App.wiring) { App.wiring = { c: hp.c.id, p: hp.p.id, pts: [] }; if (!App._wtip) { App._wtip = 1; toast('Cliquez dans le vide pour poser des points de passage (tracé libre), puis sur l\'orifice d\'arrivée — Échap / clic droit : annuler'); } return; }
     finishWire(hp); return;
   }
   if (App.wiring) {
     const w0 = hitWire(p); const A = portRef(App.wiring);
     if (w0 && A && kindOk(A.p.k, w0.kind === 'e' ? 'e' : w0.kind) && !(w0.a.c === A.c.id && w0.a.p === A.p.id) && !(w0.b.c === A.c.id && w0.b.p === A.p.id)) { const nd = splitWireAt(w0, p); finishWire({ c: nd, p: compPorts(nd)[0] }); toast('Piquage créé sur la liaison'); return; }
+    const fr = A && App.sheetComps().find(o => DEFS[o.type].isFrame && frameHit(o, p));
+    if (fr) { const nd = frameNode(fr, p); finishWire({ c: nd, p: compPorts(nd)[0] }); toast('Nœud créé sur le cadre ' + (fr.props.tag || '')); return; }
+    // clic dans le vide : point de passage (tracé libre, à votre manière) — Échap ou clic droit pour annuler
+    if (A) { (App.wiring.pts = App.wiring.pts || []).push({ x: snap(p.x), y: snap(p.y) }); return; }
     App.wiring = null; return;
   }
   { // un segment de liaison passant au-dessus d'un composant reste saisissable (sauf les petits départs collés aux orifices)
@@ -419,14 +444,29 @@ function splitWireAt(w, p, node) {
   App.wires.push({ ...base, id: App.uid(), a: w.a, b: nr, route: r1 }, { ...base, id: App.uid(), a: nr, b: w.b, route: r2, name: '' });
   return node;
 }
+// nœud de jonction posé sur le bord d'un cadre (passage à travers un bloc foré / une cartouche)
+function frameNode(f, p) {
+  const b = compBBox(f), d = [[Math.abs(p.x - b.x), 'l'], [Math.abs(p.x - b.x - b.w), 'r'], [Math.abs(p.y - b.y), 't'], [Math.abs(p.y - b.y - b.h), 'b']].sort((u, v) => u[0] - v[0])[0][1];
+  const q = d === 'l' ? { x: b.x, y: snap(p.y) } : d === 'r' ? { x: b.x + b.w, y: snap(p.y) } : d === 't' ? { x: snap(p.x), y: b.y } : { x: snap(p.x), y: b.y + b.h };
+  q.x = clamp(q.x, b.x, b.x + b.w); q.y = clamp(q.y, b.y, b.y + b.h);
+  const nd = App.addComp({ type: 'node' }, q.x, q.y); nd.sheet = f.sheet || 0; const { w, h } = compSize(nd); nd.x = q.x - w / 2; nd.y = q.y - h / 2; return nd;
+}
+// tracé libre : chemin orthogonal passant par les points cliqués
+function manualPath(A, s1, pts, s2, B, endVert) {
+  const P = [A, s1]; let cur = s1;
+  for (const q of pts) { if (q.x !== cur.x && q.y !== cur.y) P.push({ x: q.x, y: cur.y }); P.push(q); cur = q; }
+  if (s2) { if (cur.x !== s2.x && cur.y !== s2.y) P.push(endVert ? { x: s2.x, y: cur.y } : { x: cur.x, y: s2.y }); P.push(s2, B); }
+  return P;
+}
 function finishWire(hp) {
-  const a = portRef(App.wiring); App.wiring = null; if (!a) return;
+  const pts = (App.wiring && App.wiring.pts) || []; const a = portRef(App.wiring); App.wiring = null; if (!a) return;
   if (a.c === hp.c && a.p.id === hp.p.id) return;
   if (!kindOk(a.p.k, hp.p.k)) { toast('Connexion impossible : technologies incompatibles (' + kname(a.p.k) + ' / ' + kname(hp.p.k) + ')'); return; }
   if (App.wires.some(w => (w.a.c === a.c.id && w.a.p === a.p.id && w.b.c === hp.c.id && w.b.p === hp.p.id) || (w.b.c === a.c.id && w.b.p === a.p.id && w.a.c === hp.c.id && w.a.p === hp.p.id))) return;
   let k = wireKind(a.p.k, hp.p.k);
   if (k === 'x' || k === 'f') { const other = App.wires.find(w => [w.a, w.b].some(r => (r.c === a.c.id && r.p === a.p.id) || (r.c === hp.c.id && r.p === hp.p.id))); if (other && other.kind !== 'x') k = other.kind; }
-  App.wires.push({ id: App.uid(), a: { c: a.c.id, p: a.p.id }, b: { c: hp.c.id, p: hp.p.id }, kind: k, mo: null });
+  const nw = { id: App.uid(), a: { c: a.c.id, p: a.p.id }, b: { c: hp.c.id, p: hp.p.id }, kind: k, mo: null }; App.wires.push(nw);
+  if (pts.length) { const wp = wirePts(nw); if (wp) { const F = wp.pts, n = F.length, B = F[n - 1], ev = B.d === 'u' || B.d === 'd'; nw.route = routeOf({ pts: manualPath(F[0], F[1], pts, F[n - 2], B, ev) }); } }
   App.changed();
 }
 // composants détruits en simulation (pompe cassée, radiateur éclaté, appareil grillé…) : réparation sans arrêter la simulation
@@ -513,8 +553,9 @@ function endPtr(e) {
   drag = null;
 }
 cv.addEventListener('pointerup', endPtr); cv.addEventListener('pointercancel', endPtr);
-cv.addEventListener('dblclick', e => { const c = hitComp(View.toWorld(e.offsetX, e.offsetY)); if (c && c.type === 'plc') PE.open(c); });
+cv.addEventListener('dblclick', e => { const p = View.toWorld(e.offsetX, e.offsetY), c = hitComp(p); if (c && c.type === 'plc') PE.open(c); if (c && DEFS[c.type].isFrame && !Sim.S) { const nd = frameNode(c, p); App.sel = new Set([nd.id]); App.changed(); toast('Nœud ajouté sur le cadre : reliez-y vos liaisons'); } });
 cv.addEventListener('contextmenu', e => {
+  if (App.wiring) { e.preventDefault(); App.wiring = null; toast('Liaison annulée'); return; }
   e.preventDefault();
   if (drag && drag.mode === 'pan' && Math.hypot(e.offsetX - drag.sx, e.offsetY - drag.sy) > 5) return; // c'était un déplacement de vue
   drag = null; Ctx.open(e.clientX, e.clientY, View.toWorld(e.offsetX, e.offsetY));
@@ -568,6 +609,11 @@ const Ctx = {
     const r = el.getBoundingClientRect(); el.style.left = Math.min(x, innerWidth - r.width - 6) + 'px'; el.style.top = Math.min(y, innerHeight - r.height - 6) + 'px';
     el.onclick = e => { const d = e.target.closest('[data-i]'); if (d) { this.close(); items[+d.dataset.i].fn(); } const a = e.target.closest('[data-add]'); if (a) { const en = Pal.entries().find(q => q.key === a.dataset.add); this.close(); if (en) { const nc = App.addComp(en, p.x, p.y); App.sel = new Set([nc.id]); App.changed(); } } };
     const q = $('#ctxQ'); if (q) { const upd = () => { const f = q.value.toLowerCase(); const list = Pal.entries().filter(en => (!App.lib || App.lib.includes(en.key)) && (!f || en.label.toLowerCase().includes(f) || en.cat.toLowerCase().includes(f))).slice(0, f ? 14 : 8); $('#ctxR').innerHTML = list.map(en => `<div class="it" data-add="${esc(en.key)}">${esc(en.label)} <span style="color:#94a3b8;font-size:11px">${esc(en.cat)}</span></div>`).join(''); }; q.oninput = upd; upd(); setTimeout(() => q.focus(), 20); q.onkeydown = e => { if (e.key === 'Enter') { const a = $('#ctxR [data-add]'); a && a.click(); } if (e.key === 'Escape') this.close(); }; }
+  },
+  list(x, y, items) { // petit menu générique
+    const el = $('#ctx'); el.innerHTML = items.map((t, i) => t === '-' ? '<div class="sep2"></div>' : t.hd ? `<div class="hd">${esc(t.hd)}</div>` : `<div class="it${t.dis ? ' dis' : ''}" data-i="${i}">${esc(t.label)}</div>`).join('');
+    el.style.display = 'block'; const r = el.getBoundingClientRect(); el.style.left = Math.min(x, innerWidth - r.width - 6) + 'px'; el.style.top = Math.min(y, innerHeight - r.height - 6) + 'px';
+    el.onclick = e => { const d = e.target.closest('[data-i]'); if (d && !d.classList.contains('dis')) { this.close(); items[+d.dataset.i].fn(); } };
   },
   close() { $('#ctx').style.display = 'none'; }
 };
@@ -627,9 +673,18 @@ const Pal = {
 const Sheets = {
   render() {
     const el = $('#sheets');
-    el.innerHTML = App.sheets.map((s, i) => `<button data-i="${i}" class="${i === App.sheet ? 'on' : ''}" title="Double-clic pour renommer">${i + 1}. ${esc(s.name)}</button>`).join('') + '<button data-add="1" title="Nouveau folio">＋</button>';
+    el.innerHTML = App.sheets.map((s, i) => `<button data-i="${i}" class="${i === App.sheet ? 'on' : ''}" title="Double-clic pour renommer · clic droit : options">${i + 1}. ${esc(s.name)}${App.sheets.length > 1 ? `<span class="shx" data-x="${i}" title="Supprimer ce folio">×</span>` : ''}</button>`).join('') + '<button data-add="1" title="Nouveau folio">＋</button>';
     el.onclick = e => { const b = e.target.closest('button'); if (!b) return; if (b.dataset.add) { App.sheets.push({ name: 'Folio ' + (App.sheets.length + 1) }); App.sheet = App.sheets.length - 1; App.sel.clear(); App.changed(); this.render(); View.fit(); return; } App.sheet = +b.dataset.i; App.sel.clear(); App.selWire = null; this.render(); Props.render(); };
     el.ondblclick = e => { const b = e.target.closest('button[data-i]'); if (b) this.rename(+b.dataset.i); };
+    el.addEventListener('click', e => { const x = e.target.closest('[data-x]'); if (x) { e.stopPropagation(); this.remove(+x.dataset.x); } }, true);
+    el.oncontextmenu = e => { const b = e.target.closest('button[data-i]'); if (!b) return; e.preventDefault(); const i = +b.dataset.i;
+      Ctx.list(e.clientX, e.clientY, [{ hd: (i + 1) + '. ' + App.sheets[i].name }, { label: '✎ Renommer le folio…', fn: () => this.rename(i) }, { label: '⧉ Dupliquer le folio', fn: () => this.duplicate(i) }, { label: '＋ Nouveau folio', fn: () => { App.sheets.push({ name: 'Folio ' + (App.sheets.length + 1) }); App.sheet = App.sheets.length - 1; App.changed(); this.render(); View.fit(); } }, '-', { label: '🗑 Supprimer ce folio', fn: () => this.remove(i), dis: App.sheets.length < 2 }]); };
+  },
+  duplicate(i) { // copie du folio avec ses composants et liaisons internes
+    const map = {}, nsh = App.sheets.length; App.sheets.push({ name: App.sheets[i].name + ' (copie)' });
+    App.comps.filter(c => (c.sheet || 0) === i).forEach(c => { const n = JSON.parse(JSON.stringify(c)); n.id = App.uid(); n.sheet = nsh; n.state = {}; map[c.id] = n.id; App.comps.push(n); });
+    App.wires.filter(w => map[w.a.c] && map[w.b.c]).forEach(w => App.wires.push({ ...JSON.parse(JSON.stringify(w)), id: App.uid(), a: { c: map[w.a.c], p: w.a.p }, b: { c: map[w.b.c], p: w.b.p } }));
+    App.sheet = nsh; App.changed(); this.render(); View.fit();
   },
   async rename(i) { const n = await ask('Nom du folio', App.sheets[i].name); if (n) { App.sheets[i].name = n; App.changed(); this.render(); } },
   async remove(i) {
