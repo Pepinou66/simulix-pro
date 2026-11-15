@@ -88,7 +88,8 @@ ipcMain.handle('file:open', async () => {
   return { name: path.basename(r.filePaths[0]), text: fs.readFileSync(r.filePaths[0], 'utf8') };
 });
 ipcMain.handle('file:saveDataURL', async (_, name, url) => {
-  const r = await dialog.showSaveDialog(win, { defaultPath: name, filters: FILTERS.png }); if (r.canceled || !r.filePath) return null;
+  const ext = (name.split('.').pop() || 'png').toLowerCase(), flt = ext === 'zip' ? [{ name: 'Archive ZIP (fichiers Gerber)', extensions: ['zip'] }] : FILTERS.png;
+  const r = await dialog.showSaveDialog(win, { defaultPath: name, filters: flt }); if (r.canceled || !r.filePath) return null;
   fs.writeFileSync(r.filePath, Buffer.from(url.split(',')[1], 'base64')); return r.filePath;
 });
 ipcMain.handle('file:pdf', async (_, name, pages) => {

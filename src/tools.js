@@ -435,6 +435,7 @@ function initUI() {
     $('#mMore').onclick = e => { e.stopPropagation(); document.body.classList.toggle('topopen'); };
     $('#top').addEventListener('click', e => { if (document.body.classList.contains('topopen') && e.target.closest('button,select') && e.target.id !== 'selLang' && e.target.id !== 'selEx' && e.target.id !== 'selSpeed' && e.target.id !== 'selView') document.body.classList.remove('topopen'); });
     document.addEventListener('pointerdown', e => { if (document.body.classList.contains('topopen') && !e.target.closest('#top,#mbar')) document.body.classList.remove('topopen'); }); }
+  $('#bPcb').onclick = () => { if (Sim.S) Ctl.stop(); Pcb.open(); };
   Updates.init();
   if (NATIVE && NATIVE.onOpenFile) NATIVE.onOpenFile(t => Files.loadText(t));
   View2.init();
