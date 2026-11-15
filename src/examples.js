@@ -216,6 +216,19 @@ function exMotor3() {
   o.txt(820, 300, 'S1 : marche   S0 : arrêt   KM1 : auto-maintien\nF2 (95-96) coupe la commande en cas de surcharge, F2 (97-98) allume H2.\nH1 : moteur en marche.', 1, 13);
   return o;
 }
+function exElectro() { // clignotant NE555 astable + transistor + LED, carte PCB pré-placée
+  const o = Proj('Électronique — clignotant NE555', ['Schéma électronique']);
+  const g = o.add('egnd', 420, 560), b = o.add('ebat', 80, 280, { v: '9', tag: 'BAT1' }), u = o.add('e555', 360, 220, { tag: 'U1' });
+  const ra = o.add('eres', 200, 120, { r: '1k', tag: 'R1' }), rb = o.add('eres', 200, 260, { r: '47k', tag: 'R2' }), c = o.add('ecap', 200, 420, { c: '10u', tag: 'C1' });
+  const r3 = o.add('eres', 520, 260, { r: '470', tag: 'R3' }), d = o.add('eled', 660, 255, { tag: 'D1', color: 'rouge' }), pr = o.add('eprobe', 520, 330, { tag: 'Sortie' });
+  o.w(b, 'p', u, 'vcc'); o.w(b, 'm', g, 'g'); o.w(u, 'gnd', g, 'g'); o.w(b, 'p', ra, '1'); o.w(ra, '2', u, 'dis'); o.w(u, 'dis', rb, '1'); o.w(rb, '2', u, 'th'); o.w(u, 'th', u, 'tr'); o.w(u, 'tr', c, '1'); o.w(c, '2', g, 'g');
+  o.w(u, 'out', r3, '1'); o.w(r3, '2', d, 'a'); o.w(d, 'k', g, 'g'); o.w(u, 'out', pr, 'p');
+  o.txt(80, 640, 'Astable NE555 : f ≈ 1,44 / ((R1 + 2·R2)·C1) ≈ 1,5 Hz\nLancez la simulation : la LED clignote.\nOuvrez « ▦ PCB » pour dessiner la carte et exporter les fichiers Gerber.');
+  o.pcb = { w: 60, h: 40, parts: {}, tracks: [], vias: [] };
+  const put = (id, x, y, rot) => { o.pcb.parts[id] = { x, y, rot: rot || 0 }; };
+  put(b, 5.08, 33.02); put(u, 22.86, 10.16); put(ra, 6.35, 6.35); put(rb, 6.35, 12.7); put(c, 7.62, 22.86); put(r3, 35.56, 12.7); put(d, 50.8, 12.7);
+  return o;
+}
 const EXAMPLES = [
   { name: 'Électropneumatique — va-et-vient automatique (2 folios)', build: () => exElectroPneu(false) },
   { name: 'Pneumatique — vérin simple effet', build: exPneuSimple },
@@ -229,5 +242,6 @@ const EXAMPLES = [
   { name: 'Automate — Ladder marche/arrêt et clignotant', build: exLadder },
   { name: 'Automate — GRAFCET convoyeur', build: exGrafcet },
   { name: 'Électronique numérique — compteur et additionneur', build: exLogic },
+  { name: 'Électronique — clignotant NE555 (schéma + PCB)', build: exElectro },
   { name: 'Dépannage — trouver la panne (exercice)', build: () => exElectroPneu(true) }
 ];

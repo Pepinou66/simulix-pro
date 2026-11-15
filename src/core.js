@@ -16,7 +16,7 @@ const App = {
   byId(id) { return this.comps.find(c => c.id === id); },
   changed(commit) { this.layoutVer = (this.layoutVer || 0) + 1; if (commit !== false) this.commit(); if (Sim.S && !this.running) { try { Sim.tick(1e-6); } catch (e) { console.error(e); } } Props.render(); }, // en pause : recalcul immédiat des pressions après un réglage
   serialize() {
-    return JSON.stringify({ app: 'Simulix Pro', version: 1, project: this.project, opts: this.opts, sheets: this.sheets, hideFaults: this.hideFaults, lib: this.lib,
+    return JSON.stringify({ app: 'Simulix Pro', version: 1, project: this.project, opts: this.opts, sheets: this.sheets, hideFaults: this.hideFaults, lib: this.lib, pcb: this.pcb || null,
       comps: this.comps.map(c => ({ id: c.id, type: c.type, x: c.x, y: c.y, rot: c.rot || 0, sheet: c.sheet || 0, props: c.props, fault: c.fault || null })),
       wires: this.wires.map(w => ({ id: w.id, a: w.a, b: w.b, kind: w.kind, mo: w.mo ?? null, route: w.route ? { o: w.route.o, v: [...w.route.v] } : null, cut: !!w.cut, name: w.name || '', ref: w.ref || '', color: w.color || '', keepColor: !!w.keepColor })) });
   },
@@ -29,7 +29,7 @@ const App = {
     this.project = Object.assign({ name: 'Projet', author: '', company: '', rev: 'A', date: '' }, o.project || {});
     this.opts = Object.assign({ frame: true, wireNums: false, xref: true }, o.opts || {});
     this.sheets = o.sheets && o.sheets.length ? o.sheets : [{ name: 'Folio 1' }];
-    this.hideFaults = !!o.hideFaults; this.lib = o.lib || null; this.sheet = 0;
+    this.hideFaults = !!o.hideFaults; this.lib = o.lib || null; this.sheet = 0; this.pcb = o.pcb || null;
     let mx = 0; [...this.comps, ...this.wires].forEach(x => { const n = parseInt(String(x.id).slice(1)); if (n > mx) mx = n; }); this.nid = mx + 1;
     this.comps.forEach(c => { if (c.type === 'valve') ['aL', 'aR', 'xL', 'xR'].forEach(k => { if (c.props[k] === 'pilot') c.props[k] = c.props.medium === 'hyd' ? 'pilotH' : 'pilotP'; }); const d = DEFS[c.type]; d.init && d.init(c); });
     this.sel.clear(); this.selWire = null; this.plot.ch = [];
@@ -197,7 +197,7 @@ const View = {
     App.view = { s, ox: (r.width - (b.x1 - b.x0) * s) / 2 - b.x0 * s, oy: (r.height - (b.y1 - b.y0) * s) / 2 - b.y0 * s };
   }
 };
-const WCOL = { e: '#334155', p: '#2563eb', h: '#b91c1c', l: '#15803d', f: '#475569', x: '#334155' };
+const WCOL = { e: '#334155', p: '#2563eb', h: '#b91c1c', l: '#15803d', f: '#475569', x: '#334155', n: '#0f766e' };
 const PHCOL = { '+': '#dc2626', '0': '#2563eb', L1: '#92400e', L2: '#111827', L3: '#6b7280', N: '#2563eb', PE: '#16a34a', S1: '#ea580c', S2: '#0891b2' };
 function wireStyle(w, S) {
   const k = w.kind;
@@ -214,6 +214,10 @@ function pZone(c, p, S) { // zone de pression d'un orifice : HP / BP / R (retour
 }
 function wireStyle0(w, S) {
   const k = w.kind;
+  if (k === 'n') { // électronique : couleur selon le potentiel (rouge = positif, bleu = négatif)
+    if (!S || !S.ev) return ['#0f766e', 1.8, []]; const c = App.byId(w.a.c); const v = c ? Elec.V(S, c, w.a.p) : 0, m = Math.max(1, ...[...S.ev.values()].map(Math.abs));
+    const t = clamp(Math.abs(v) / m, 0, 1); if (t < 0.02) return ['#475569', 2, []]; return [v > 0 ? `rgb(${Math.round(120 + 135 * t)},${Math.round(60 - 30 * t)},${Math.round(60 - 30 * t)})` : `rgb(40,${Math.round(90 + 40 * t)},${Math.round(160 + 95 * t)})`, 2.4, []];
+  }
   if (!S) return [WCOL[k] || '#334155', k === 'h' ? 2.2 : 1.6, k === 'f' ? [] : []];
   const c = App.byId(w.a.c), p = w.a.p, i = S.info(c, p);
   if (k === 'e' || (k === 'x' && (i.pots || S.vp.has(S.root(c, p))))) {
@@ -518,7 +522,7 @@ function repairComp(c) {
   if (Sim.S) { Sim.S.stickyBanner = ''; Sim.S.banner = ''; Sim.settleNow(); }
   toast((c.props.tag || DEFS[c.type].name) + ' réparé(e) / remplacé(e)'); Props.render();
 }
-const kname = k => ({ e: 'électrique', p: 'pneumatique', h: 'hydraulique', l: 'logique', f: 'fluide', x: 'universel' }[k]);
+const kname = k => ({ e: 'électrique', p: 'pneumatique', h: 'hydraulique', l: 'logique', f: 'fluide', x: 'universel', n: 'électronique' }[k]);
 cv.addEventListener('pointermove', e => {
   if (ptrs.has(e.pointerId)) ptrs.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
   if (pinch && ptrs.size === 2) { const [a, b] = [...ptrs.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y), cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2; View.zoomAt(cx, cy, d / pinch.d); App.view.ox += cx - pinch.cx; App.view.oy += cy - pinch.cy; pinch = { d, cx, cy }; return; }
@@ -817,7 +821,8 @@ const Props = {
     const w = App.wires.find(x => x.id === App.selWire); if (!w) { App.selWire = null; return this.render(); }
     const A = portRef(w.a), B = portRef(w.b);
     let h = `<h3>${w.name ? esc(w.name) + ' — ' : ''}Liaison ${kname(w.kind)}</h3><div class="pp"><div class="kv"><span>De</span><b>${esc(A ? (A.c.props.tag || DEFS[A.c.type].name) + ' : ' + A.p.id : '?')}</b><span>Vers</span><b>${esc(B ? (B.c.props.tag || DEFS[B.c.type].name) + ' : ' + B.p.id : '?')}</b>`;
-    if (Sim.S && A) { const S = Sim.S; if (w.kind === 'e' || w.kind === 'x') { const pt = S.pot(A.c, A.p.id); h += `<span>Potentiel</span><b>${!pt ? 'non alimenté' : (pt.ph || '') + ' — ' + (pt.dc ? pt.dc + ' V DC' : fmt(Math.hypot(pt.re, pt.im), 0) + ' V AC / terre')}</b>`; } else if (w.kind !== 'l') { h += `<span>Pression</span><b>${fmt(S.P(A.c, A.p.id), 2)} bar</b><span>Débit</span><b>${fmt(S.Q(A.c, A.p.id), 2)} L/min</b>`; const tw = wireTemp(w, S); if (tw != null) h += `<span>Température</span><b>${fmt(tw, 1)} °C</b>`; } }
+    if (Sim.S && A && w.kind === 'n') h += `<span>Potentiel</span><b>${eng(Elec.V(Sim.S, A.c, A.p.id), 'V')}</b>`;
+    else if (Sim.S && A) { const S = Sim.S; if (w.kind === 'e' || w.kind === 'x') { const pt = S.pot(A.c, A.p.id); h += `<span>Potentiel</span><b>${!pt ? 'non alimenté' : (pt.ph || '') + ' — ' + (pt.dc ? pt.dc + ' V DC' : fmt(Math.hypot(pt.re, pt.im), 0) + ' V AC / terre')}</b>`; } else if (w.kind !== 'l') { h += `<span>Pression</span><b>${fmt(S.P(A.c, A.p.id), 2)} bar</b><span>Débit</span><b>${fmt(S.Q(A.c, A.p.id), 2)} L/min</b>`; const tw = wireTemp(w, S); if (tw != null) h += `<span>Température</span><b>${fmt(tw, 1)} °C</b>`; } }
     h += `</div>`;
     const fl = w.kind !== 'e' && w.kind !== 'l' && w.kind !== 'x';
     h += `<div class="row"><label>Nom ${fl ? 'du flexible / de la conduite' : 'du fil / du câble'}</label><input id="wName" value="${esc(w.name || '')}" placeholder="${fl ? 'ex. FL1, conduite P' : 'ex. W12'}"></div>

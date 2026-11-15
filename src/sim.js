@@ -244,6 +244,7 @@ const Sim = {
     this.actuate(dt);
     for (const c of App.comps) { const d = DEFS[c.type]; if (d.step) d.step(c, S, dt); }
     this.solve(); this.settle();
+    if (typeof Elec !== 'undefined') { try { Elec.run(S, dt); } catch (e) { console.error(e); } }
     // courants et surcharge
     const cur = new Map();
     for (const [c, a, b, w, ra, rb] of S.loadList) {
