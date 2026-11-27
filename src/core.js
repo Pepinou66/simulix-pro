@@ -988,7 +988,7 @@ const Ctl = {
     $('#bRun').disabled = App.running; $('#bPause').disabled = !App.running; $('#bStep').disabled = App.running; $('#bStop').disabled = !sim;
     ['#bUndo', '#bRedo', '#bRot', '#bDup', '#bDel', '#bNew', '#bOpen'].forEach(s => $(s).disabled = sim);
     { const r = $('#mRun'); if (r) { r.className = sim ? 'stop' : 'run'; r.innerHTML = sim ? '<b>⏹</b>' + I18N.tr('Arrêter') : '<b>▶</b>' + I18N.tr('Simuler'); $('#mPause').disabled = !sim; $('#mPause').innerHTML = App.running || !sim ? '<b>⏸</b>' + I18N.tr('Pause') : '<b>▶</b>' + I18N.tr('Reprendre'); $('#mUndo').disabled = sim; $('#mDel').disabled = sim; } }
-    { const hasH = App.wires.some(w => w.kind === 'h'), hasP = App.wires.some(w => w.kind === 'p'); $('#pzLeg').style.display = sim && (hasH || hasP) ? 'flex' : 'none'; document.querySelectorAll('#pzLeg [data-m]').forEach(e => e.style.display = (e.dataset.m === 'h' ? hasH : hasP) ? '' : 'none'); }
+    { const hasH = App.wires.some(w => w.kind === 'h'), hasP = App.wires.some(w => w.kind === 'p'); const pl = $('#pzLeg'), sh = sim && (hasH || hasP); if (sh !== (pl.style.display === 'flex')) { pl.style.display = sh ? 'flex' : 'none'; if (sh && pl.fit) pl.fit(); } document.querySelectorAll('#pzLeg [data-m]').forEach(e => e.style.display = (e.dataset.m === 'h' ? hasH : hasP) ? '' : 'none'); }
     $('#modeTag').textContent = sim ? (App.running ? '● Simulation en cours' : '❚❚ Simulation en pause') : 'Édition';
     $('#modeTag').style.color = sim ? '#15803d' : '';
     $('#bTrouble').classList.toggle('on', App.hideFaults);

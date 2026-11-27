@@ -394,7 +394,7 @@ function help() {
   <h4>Simuler</h4><ul>
   <li>▶ lance la simulation : pressions (bar), débits (L/min), vitesses et efforts sont calculés à partir des dimensions, des charges et des sources.</li>
   <li>Cliquez sur les boutons poussoirs (maintien), commutateurs, leviers et distributeurs manuels pour les actionner.</li>
-  <li>Code couleur : fil électrique rouge = +24 V, bleu = 0 V ; conduite bleue épaisse = air sous pression, rouge = huile sous pression, bleu = retour réservoir.</li>
+  <li>Code couleur : fil électrique rouge = +24 V, bleu = 0 V ; conduite bleue épaisse = air sous pression, rouge = huile sous pression, bleu = retour réservoir. La légende des pressions se déplace en la faisant glisser ; un clic sur son titre la réduit, un double-clic la remet à sa place.</li>
   <li>📈 Traceur : ajoutez des vérins, manomètres, débitmètres, bobines… pour suivre leurs courbes dans le temps.</li></ul>
   <h4>Automate</h4><ul><li>Double-cliquez sur l'automate : éditeur Ladder, GRAFCET, mnémoniques, table des variables avec forçage, liaison matérielle Arduino / Modbus TCP.</li></ul>
   <h4>Dépannage</h4><ul><li>Le formateur introduit des défaillances (fil coupé, contact collé, bobine coupée, tiroir bloqué, vérin grippé…), puis active 🛠 Dépannage et enregistre le projet. L'apprenant mesure (voltmètre, manomètre, traceur) et signale les composants défectueux.</li></ul>
@@ -432,7 +432,25 @@ function initUI() {
     $('#mPal').onclick = cl('#bPal'); $('#mUndo').onclick = cl('#bUndo'); $('#mDel').onclick = cl('#bDel'); $('#mProps').onclick = cl('#bProps');
     $('#mRun').onclick = () => Sim.S ? $('#bStop').click() : $('#bRun').click();
     $('#mPause').onclick = () => App.running ? $('#bPause').click() : $('#bRun').click();
-    if (innerWidth < 900) $('#pzLeg').classList.add('mini'); $('#pzT').onclick = () => $('#pzLeg').classList.toggle('mini');
+    if (innerWidth < 900) $('#pzLeg').classList.add('mini');
+    // légende des pressions : déplaçable (glisser), clic sur le titre = réduire / afficher ; position mémorisée
+    { const L = $('#pzLeg'), C = $('#center');
+      const place = (x, y) => { const mx = Math.max(0, C.clientWidth - L.offsetWidth), my = Math.max(0, C.clientHeight - L.offsetHeight);
+        x = Math.min(Math.max(0, x), mx); y = Math.min(Math.max(0, y), my);
+        Object.assign(L.style, { left: x + 'px', top: y + 'px', right: 'auto', bottom: 'auto' }); return [x, y]; };
+      try { const p = JSON.parse(store('simulix.pzLeg') || 'null'); if (p) Object.assign(L.style, { left: p[0] + 'px', top: p[1] + 'px', right: 'auto', bottom: 'auto' }); } catch (e) { }
+      L.fit = () => { if (L.style.top && L.offsetWidth) place(L.offsetLeft, L.offsetTop); }; new ResizeObserver(L.fit).observe(C);
+      let d = null;
+      L.addEventListener('pointerdown', e => { if (e.button || e.target.closest('label')) return; d = { x: e.clientX, y: e.clientY, l: L.offsetLeft, t: L.offsetTop, mv: false, id: e.pointerId }; });
+      addEventListener('pointermove', e => { if (!d || e.pointerId !== d.id) return; const dx = e.clientX - d.x, dy = e.clientY - d.y;
+        if (!d.mv && Math.hypot(dx, dy) < 4) return; if (!d.mv) { d.mv = true; L.classList.add('drag'); }
+        d.p = place(d.l + dx, d.t + dy); });
+      const end = e => { if (!d || e.pointerId !== d.id) return;
+        if (d.mv) { L.classList.remove('drag'); if (d.p) store('simulix.pzLeg', JSON.stringify(d.p)); }
+        else if (e.type === 'pointerup' && e.target.closest('#pzT')) L.classList.toggle('mini');
+        d = null; };
+      addEventListener('pointerup', end); addEventListener('pointercancel', end);
+      $('#pzT').ondblclick = () => { store('simulix.pzLeg', ''); Object.assign(L.style, { left: '', top: '', right: '', bottom: '' }); }; }
     $('#mMore').onclick = e => { e.stopPropagation(); document.body.classList.toggle('topopen'); };
     $('#top').addEventListener('click', e => { if (document.body.classList.contains('topopen') && e.target.closest('button,select') && e.target.id !== 'selLang' && e.target.id !== 'selEx' && e.target.id !== 'selSpeed' && e.target.id !== 'selView') document.body.classList.remove('topopen'); });
     document.addEventListener('pointerdown', e => { if (document.body.classList.contains('topopen') && !e.target.closest('#top,#mbar')) document.body.classList.remove('topopen'); }); }
