@@ -5,6 +5,7 @@
 L'objectif est de proposer un outil complet et accessible, aussi bien pour l'apprentissage que pour la conception et le dépannage de systèmes industriels.
 
 Le logiciel est disponible sous forme d'application de bureau pour Windows et bénéficie d'un système de mises à jour automatiques.
+Il existe aussi une application Android et une **version web**, utilisable dans le navigateur et installable sur iPhone / iPad : **https://pepinou66.github.io/simulix-pro/** (dans Safari : Partager → « Sur l'écran d'accueil »).
 
 ## À propos du projet et de son créateur
 
