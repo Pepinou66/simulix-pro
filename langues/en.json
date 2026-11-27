@@ -338,6 +338,7 @@
   "Garder cette couleur pendant la simulation (sinon : couleur d'état pression / tension)": "Keep this colour during simulation (otherwise: pressure / voltage state colour)",
   "Gavage": "Boost",
   "Gestionnaire de repères": "Tag manager",
+  "Glisser pour déplacer la légende (double-clic : position d'origine)": "Drag to move the legend (double-click: original position)",
   "Glisser pour redimensionner la bibliothèque": "Drag to resize the library",
   "Glisser pour redimensionner le panneau": "Drag to resize the panel",
   "Groupe de conditionnement FRL": "FRL air service unit",
