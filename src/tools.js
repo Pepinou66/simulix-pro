@@ -387,7 +387,7 @@ function help() {
   dlg.innerHTML = `<header><h2>Aide — Simulix Pro</h2><button class="btn" id="hClose">Fermer</button></header><div class="body" style="font-size:13px;line-height:1.55">
   <h4>Concevoir un schéma</h4><ul>
   <li>Cliquez sur un composant de la bibliothèque puis sur le schéma pour le placer (Maj+clic : placements successifs).</li>
-  <li>Cliquez sur un orifice ou une borne, puis sur un autre, pour tracer une liaison. Les technologies incompatibles sont refusées. Faites glisser un fil pour déplacer son segment central.</li>
+  <li>Cliquez sur un orifice ou une borne, puis sur un autre, pour tracer une liaison. Les technologies incompatibles sont refusées. Le tracé automatique contourne les composants et ne longe pas les autres liaisons (il les croise seulement quand c'est inévitable, jamais au départ d'un orifice). Faites glisser un fil pour déplacer son segment central ; « Tracé automatique » (clic droit) le recalcule.</li>
   <li>Liez les technologies par les <b>repères</b> : une bobine K1 commande les contacts K1, un solénoïde Y1 commande le distributeur dont l'électro-aimant est Y1, un fin de course renseigne le vérin associé (A0 = rentré, A1 = sorti).</li>
   <li>Les <b>folios</b> (onglets en bas) structurent le projet. Les renvois de folio de même nom relient les potentiels entre folios. Les références croisées (folio.zone) s'affichent sous les bobines et les vérins.</li>
   <li>Le panneau de droite permet de régler les paramètres techniques, de choisir un modèle du catalogue et de simuler une défaillance.</li></ul>

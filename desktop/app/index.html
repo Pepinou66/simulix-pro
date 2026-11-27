@@ -333,7 +333,7 @@ function store(k, v) { try { if (v === undefined) return localStorage.getItem(k)
      ouverture de projets, recherche de mise à jour (APK sur GitHub Releases) ;
    - version web installable (PWA, Android et iPhone/iPad) : service worker.
    ===================================================================== */
-const SIMULIX_VERSION = '2.3.0';
+const SIMULIX_VERSION = '2.3.1';
 (function () {
   const C = window.Capacitor, native = !!(C && C.isNativePlatform && C.isNativePlatform());
   if (native) {
@@ -2856,48 +2856,107 @@ function wirePts(w) {
   if (w.mo != null) { // ancien réglage manuel du segment central
     if (va && vb) mid = [{ x: s1.x, y: w.mo }, { x: s2.x, y: w.mo }]; else if (!va && !vb) mid = [{ x: w.mo, y: s1.y }, { x: w.mo, y: s2.y }];
     else if (va) mid = [{ x: s1.x, y: s2.y }]; else mid = [{ x: s2.x, y: s1.y }];
-    return { pts: [A, s1, ...mid, s2, B], vert: va && vb, horiz: !va && !vb };
+    if (!pathHits(w, [s1, ...mid, s2])) return { pts: [A, s1, ...mid, s2, B], vert: va && vb, horiz: !va && !vb };
+    // le réglage imposé traverse un composant : on laisse le tracé automatique le contourner
   }
   mid = autoRoute(w, A, B, s1, s2);
   return { pts: [A, s1, ...mid, s2, B], vert: va && vb, horiz: !va && !vb };
 }
-/* Tracé automatique : on essaie plusieurs chemins orthogonaux et on garde le meilleur
-   (court, peu de coudes, sans repasser dans les composants raccordés ni revenir sur le départ d'un orifice). */
+/* Tracé automatique : plus court chemin orthogonal (Dijkstra sur une grille construite à partir des contours des
+   composants, marge M) qui contourne tous les composants de la feuille : court, peu de coudes, sans traverser de
+   composant ni revenir sur le départ d'un orifice. */
 const ROUTE_CACHE = new Map();
+function routeBox(c) { if (!c || c.type === 'node' || c.type === 'text' || c.type === 'offpage' || DEFS[c.type].isFrame) return null; const b = compBBox(c); return { x0: b.x, y0: b.y, x1: b.x + b.w, y1: b.y + b.h }; }
+function routeRects(ca, cb, x0, y0, x1, y1) { // composants raccordés d'abord, puis ceux de la zone du tracé
+  const others = App.sheetComps().filter(c => c !== ca && c !== cb).map(routeBox).filter(r => r && r.x1 > x0 && r.x0 < x1 && r.y1 > y0 && r.y0 < y1);
+  return [routeBox(ca), routeBox(cb), ...others.slice(0, 40)];
+}
+function segCross(a, b, r) { // le segment traverse l'intérieur du rectangle
+  const e = 1; if (!r) return false;
+  if (a.x === b.x) { const y0 = Math.min(a.y, b.y), y1 = Math.max(a.y, b.y); return a.x > r.x0 + e && a.x < r.x1 - e && y1 > r.y0 + e && y0 < r.y1 - e; }
+  const x0 = Math.min(a.x, b.x), x1 = Math.max(a.x, b.x); return a.y > r.y0 + e && a.y < r.y1 - e && x1 > r.x0 + e && x0 < r.x1 - e;
+}
+const inRect = (p, r) => r && p.x > r.x0 && p.x < r.x1 && p.y > r.y0 && p.y < r.y1;
+// un tracé imposé (ancien réglage « mo ») traverse-t-il un composant ? (on ignore un composant qui contient le départ ou l'arrivée)
+function pathHits(w, P) {
+  const xs = P.map(q => q.x), ys = P.map(q => q.y), s1 = P[0], s2 = P[P.length - 1];
+  const rects = routeRects(App.byId(w.a.c), App.byId(w.b.c), Math.min(...xs) - 1, Math.min(...ys) - 1, Math.max(...xs) + 1, Math.max(...ys) + 1).filter(r => r && !inRect(s1, r) && !inRect(s2, r));
+  for (let i = 0; i < P.length - 1; i++) for (const r of rects) if (segCross(P[i], P[i + 1], r)) return true;
+  return false;
+}
 function autoRoute(w, A, B, s1, s2) {
-  const ca = App.byId(w.a.c), cb = App.byId(w.b.c), bb = c => { if (!c || c.type === 'node' || DEFS[c.type].isFrame) return null; const b = compBBox(c); return { x0: b.x, y0: b.y, x1: b.x + b.w, y1: b.y + b.h }; };
-  const ra = bb(ca), rb = bb(cb), key = [A.x, A.y, A.d, B.x, B.y, B.d, ra && [ra.x0, ra.y0, ra.x1, ra.y1], rb && [rb.x0, rb.y0, rb.x1, rb.y1], App.layoutVer || 0].join();
+  const ca = App.byId(w.a.c), cb = App.byId(w.b.c), ra = routeBox(ca), rb = routeBox(cb);
+  const key = [A.x, A.y, A.d, B.x, B.y, B.d, ra && [ra.x0, ra.y0, ra.x1, ra.y1], rb && [rb.x0, rb.y0, rb.x1, rb.y1], App.layoutVer || 0].join();
   const hit = ROUTE_CACHE.get(w.id); if (hit && hit.key === key) return hit.mid;
-  const M = 14, zx0 = Math.min(s1.x, s2.x) - 80, zx1 = Math.max(s1.x, s2.x) + 80, zy0 = Math.min(s1.y, s2.y) - 80, zy1 = Math.max(s1.y, s2.y) + 80;
-  // obstacles : les deux composants raccordés + ceux qui se trouvent dans la zone du tracé
-  const others = App.sheetComps().filter(c => c !== ca && c !== cb && c.type !== 'text' && !DEFS[c.type].isFrame && c.type !== 'node' && c.type !== 'offpage').map(bb).filter(r => r && r.x1 > zx0 && r.x0 < zx1 && r.y1 > zy0 && r.y0 < zy1).slice(0, 12);
-  const rects = [ra, rb, ...others].filter(Boolean);
-  const dv = d => ({ u: [0, -1], d: [0, 1], l: [-1, 0], r: [1, 0] })[d] || null, da = dv(A.d), db = dv(B.d);
-  const ys = new Set([s1.y, s2.y, Math.round((s1.y + s2.y) / 2)]), xs = new Set([s1.x, s2.x, Math.round((s1.x + s2.x) / 2)]);
-  rects.forEach(r => { ys.add(r.y0 - M); ys.add(r.y1 + M); xs.add(r.x0 - M); xs.add(r.x1 + M); });
-  const cands = [[], [{ x: s2.x, y: s1.y }], [{ x: s1.x, y: s2.y }]];
-  ys.forEach(y => cands.push([{ x: s1.x, y }, { x: s2.x, y }])); xs.forEach(x => cands.push([{ x, y: s1.y }, { x, y: s2.y }]));
-  ys.forEach(y => xs.forEach(x => { cands.push([{ x: s1.x, y }, { x, y }, { x, y: s2.y }]); cands.push([{ x, y: s1.y }, { x, y }, { x: s2.x, y }]); }));
-  const cross = (a, b, r) => { // le segment traverse l'intérieur du rectangle
-    const e = 1; if (a.x === b.x) { const y0 = Math.min(a.y, b.y), y1 = Math.max(a.y, b.y); return a.x > r.x0 + e && a.x < r.x1 - e && y1 > r.y0 + e && y0 < r.y1 - e; }
-    const x0 = Math.min(a.x, b.x), x1 = Math.max(a.x, b.x); return a.y > r.y0 + e && a.y < r.y1 - e && x1 > r.x0 + e && x0 < r.x1 - e;
-  };
-  let best = null, bs = Infinity;
-  for (const mid of cands) {
-    const P = [s1, ...mid, s2].filter((q, i, a) => i === 0 || q.x !== a[i - 1].x || q.y !== a[i - 1].y);
-    let ok = true, len = 0, bends = 0, pen = 0, pd = null;
-    for (let i = 0; i < P.length - 1; i++) {
-      const a = P[i], b = P[i + 1]; if (a.x !== b.x && a.y !== b.y) { ok = false; break; }
-      const l = Math.abs(a.x - b.x) + Math.abs(a.y - b.y), d = [Math.sign(b.x - a.x), Math.sign(b.y - a.y)]; len += l;
-      if (pd) { if (d[0] !== pd[0] || d[1] !== pd[1]) bends++; if (d[0] === -pd[0] && d[1] === -pd[1]) pen += 3000; }
-      if (i === 0 && da && d[0] === -da[0] && d[1] === -da[1]) pen += 3000; // repart à l'envers dans le départ de l'orifice
-      if (i === P.length - 2 && db && d[0] === db[0] && d[1] === db[1]) pen += 3000; // arrive par l'intérieur
-      rects.forEach((r, k) => { if (cross(a, b, r)) pen += k < 2 ? 2000 : 800; }); pd = d;
-    }
-    if (!ok) continue; const sc = len + bends * 25 + pen;
-    if (sc < bs) { bs = sc; best = P.slice(1, -1); }
+  const M = 14, PAD = 160;
+  let zx0 = Math.min(s1.x, s2.x) - PAD, zx1 = Math.max(s1.x, s2.x) + PAD, zy0 = Math.min(s1.y, s2.y) - PAD, zy1 = Math.max(s1.y, s2.y) + PAD;
+  const rects = routeRects(ca, cb, zx0, zy0, zx1, zy1);
+  rects.forEach(r => { if (r) { zx0 = Math.min(zx0, r.x0 - 2 * M); zx1 = Math.max(zx1, r.x1 + 2 * M); zy0 = Math.min(zy0, r.y0 - 2 * M); zy1 = Math.max(zy1, r.y1 + 2 * M); } });
+  // grille : lignes de départ/arrivée, milieu, contours des composants décalés de M, bords de la zone
+  const X = new Set([s1.x, s2.x, Math.round((s1.x + s2.x) / 2), zx0, zx1]), Y = new Set([s1.y, s2.y, Math.round((s1.y + s2.y) / 2), zy0, zy1]);
+  rects.forEach(r => { if (r) { X.add(r.x0 - M); X.add(r.x1 + M); Y.add(r.y0 - M); Y.add(r.y1 + M); } });
+  // coût de traversée de chaque arête de la grille (composant raccordé : 2000 si le départ/l'arrivée n'y est pas, autre composant : 6000)
+  const pen = r => (inRect(s1, r) || inRect(s2, r)) ? 400 : (r === ra || r === rb) ? 2000 : 6000;
+  // flexibles déjà tracés (ceux qui précèdent dans la liste, pour un ordre stable) : ne pas les longer, les croiser le moins possible
+  const same = (p, q) => p.c === q.c && p.p === q.p, k0 = App.wires.indexOf(w), segs = [];
+  App.wires.slice(0, Math.max(0, k0)).forEach(o => {
+    const oc = App.byId(o.a.c); if (!oc || (oc.sheet || 0) !== (ca && ca.sheet || 0)) return;
+    if (same(o.a, w.a) || same(o.a, w.b) || same(o.b, w.a) || same(o.b, w.b)) return; // même orifice : même ligne, superposition normale
+    const op = wirePts(o); if (!op) return; const Q = op.pts;
+    for (let k = 0; k < Q.length - 1; k++) { const a = Q[k], b = Q[k + 1]; if (Math.max(a.x, b.x) < zx0 || Math.min(a.x, b.x) > zx1 || Math.max(a.y, b.y) < zy0 || Math.min(a.y, b.y) > zy1) continue;
+      if (Math.abs(a.x - b.x) < 0.5) segs.push({ v: 1, c: a.x, lo: Math.min(a.y, b.y), hi: Math.max(a.y, b.y) }); else if (Math.abs(a.y - b.y) < 0.5) segs.push({ v: 0, c: a.y, lo: Math.min(a.x, b.x), hi: Math.max(a.x, b.x) }); }
+  });
+  // départs des orifices des autres composants : passer dessus ferait croire à un raccordement
+  App.sheetComps().forEach(c => { if (c.type === 'text' || DEFS[c.type].isFrame) return; compPorts(c).forEach(q => {
+    if ((c.id === w.a.c && q.id === w.a.p) || (c.id === w.b.c && q.id === w.b.p)) return; const P = portWorld(c, q); if (P.d === 'c') return;
+    if (P.x < zx0 || P.x > zx1 || P.y < zy0 || P.y > zy1) return; const v = P.d === 'u' || P.d === 'd', e = P.d === 'r' || P.d === 'd' ? 22 : -22;
+    segs.push(v ? { v: 1, c: P.x, lo: Math.min(P.y, P.y + e) - 3, hi: Math.max(P.y, P.y + e) + 3, stub: 1 } : { v: 0, c: P.y, lo: Math.min(P.x, P.x + e) - 3, hi: Math.max(P.x, P.x + e) + 3, stub: 1 });
+  }); });
+  segs.slice(0, 120).forEach(g => { (g.v ? X : Y).add(g.c - 10); (g.v ? X : Y).add(g.c + 10); }); // couloirs parallèles à 10 px
+  const wirePen = (vert, c, lo, hi) => { let t = 0; for (const g of segs) {
+    if (g.v === vert) { const d = Math.abs(g.c - c); if (d < 8 && Math.min(hi, g.hi) - Math.max(lo, g.lo) > 1) t += d < 1 ? 1500 : 600; } // superposé ou collé : on croirait les deux raccordés
+    else if (g.c >= lo - 0.5 && g.c <= hi + 0.5 && c > g.lo + 0.5 && c < g.hi - 0.5) t += g.stub ? 1500 : 40; } // croisement
+    return t; };
+  const xs = [...X].sort((a, b) => a - b), ys = [...Y].sort((a, b) => a - b), nx = xs.length, ny = ys.length;
+  const hC = new Float64Array(nx * ny), vC = new Float64Array(nx * ny); // hC[j*nx+i] : (i,j)→(i+1,j) ; vC[j*nx+i] : (i,j)→(i,j+1)
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    let h = 0, v = 0; const p = { x: xs[i], y: ys[j] };
+    for (const r of rects) { if (!r) continue; const q = { x0: r.x0 - M + 3, y0: r.y0 - M + 3, x1: r.x1 + M - 3, y1: r.y1 + M - 3 }, near = (inRect(s1, q) || inRect(s2, q)) ? 0 : 300; // longer un composant au ras : à éviter
+      if (i < nx - 1) { const b = { x: xs[i + 1], y: ys[j] }; h += segCross(p, b, r) ? pen(r) : segCross(p, b, q) ? near : 0; }
+      if (j < ny - 1) { const b = { x: xs[i], y: ys[j + 1] }; v += segCross(p, b, r) ? pen(r) : segCross(p, b, q) ? near : 0; } }
+    if (i < nx - 1) h += wirePen(0, ys[j], xs[i], xs[i + 1]); if (j < ny - 1) v += wirePen(1, xs[i], ys[j], ys[j + 1]);
+    hC[j * nx + i] = h; vC[j * nx + i] = v;
   }
-  best = best || [{ x: s1.x, y: s2.y }];
+  const DV = [[0, -1], [1, 0], [0, 1], [-1, 0]], dIdx = { u: 0, r: 1, d: 2, l: 3 }, da = dIdx[A.d], db = dIdx[B.d];
+  const si = xs.indexOf(s1.x), sj = ys.indexOf(s1.y), gi = xs.indexOf(s2.x), gj = ys.indexOf(s2.y);
+  const N = nx * ny * 4, dist = new Float64Array(N).fill(Infinity), prev = new Int32Array(N).fill(-1);
+  const heap = []; const push = (d, s) => { heap.push([d, s]); let k = heap.length - 1; while (k) { const p = (k - 1) >> 1; if (heap[p][0] <= heap[k][0]) break; [heap[p], heap[k]] = [heap[k], heap[p]]; k = p; } };
+  const pop = () => { const t = heap[0], l = heap.pop(); if (heap.length) { heap[0] = l; let k = 0; for (;;) { const a = 2 * k + 1, b = a + 1; let m = k; if (a < heap.length && heap[a][0] < heap[m][0]) m = a; if (b < heap.length && heap[b][0] < heap[m][0]) m = b; if (m === k) break; [heap[m], heap[k]] = [heap[k], heap[m]]; k = m; } } return t; };
+  const sid = (i, j, d) => (j * nx + i) * 4 + d;
+  for (let d = 0; d < 4; d++) { // on part dans le sens de l'orifice : pas de demi-tour vers lui
+    if (da != null && d !== da) continue; const s = sid(si, sj, d); dist[s] = 0; push(0, s);
+  }
+  let goal = -1;
+  while (heap.length) {
+    const [cd, s] = pop(); if (cd > dist[s]) continue;
+    const d = s % 4, n = (s - d) / 4, i = n % nx, j = (n - i) / nx;
+    if (i === gi && j === gj) { goal = s; break; }
+    for (let e = 0; e < 4; e++) {
+      if (e === (d + 2) % 4) continue; // pas de demi-tour
+      const i2 = i + DV[e][0], j2 = j + DV[e][1]; if (i2 < 0 || j2 < 0 || i2 >= nx || j2 >= ny) continue;
+      let c = Math.abs(xs[i2] - xs[i]) + Math.abs(ys[j2] - ys[j]) + (e !== d ? 25 : 0);
+      c += e === 1 ? hC[j * nx + i] : e === 3 ? hC[j * nx + i2] : e === 2 ? vC[j * nx + i] : vC[j2 * nx + i];
+      if (i2 === gi && j2 === gj && db != null) c += e === db ? 3000 : e !== (db + 2) % 4 ? 25 : 0; // arrive par l'intérieur de l'orifice / coude final
+      const s2_ = sid(i2, j2, e), nd = cd + c; if (nd < dist[s2_]) { dist[s2_] = nd; prev[s2_] = s; push(nd, s2_); }
+    }
+  }
+  let best = [{ x: s1.x, y: s2.y }];
+  if (goal >= 0) {
+    const P = []; for (let s = goal; s >= 0; s = prev[s]) { const n = (s - s % 4) / 4, i = n % nx, j = (n - i) / nx; P.unshift({ x: xs[i], y: ys[j] }); }
+    // on ne garde que les coudes
+    const K = P.filter((q, k) => k === 0 || k === P.length - 1 || !((P[k - 1].x === q.x && q.x === P[k + 1].x) || (P[k - 1].y === q.y && q.y === P[k + 1].y)));
+    best = K.slice(1, -1);
+  }
   ROUTE_CACHE.set(w.id, { key, mid: best }); return best;
 }
 function routeOf(wp) { // convertit un tracé (auto) en tracé libre éditable
@@ -4395,7 +4454,7 @@ function help() {
   dlg.innerHTML = `<header><h2>Aide — Simulix Pro</h2><button class="btn" id="hClose">Fermer</button></header><div class="body" style="font-size:13px;line-height:1.55">
   <h4>Concevoir un schéma</h4><ul>
   <li>Cliquez sur un composant de la bibliothèque puis sur le schéma pour le placer (Maj+clic : placements successifs).</li>
-  <li>Cliquez sur un orifice ou une borne, puis sur un autre, pour tracer une liaison. Les technologies incompatibles sont refusées. Faites glisser un fil pour déplacer son segment central.</li>
+  <li>Cliquez sur un orifice ou une borne, puis sur un autre, pour tracer une liaison. Les technologies incompatibles sont refusées. Le tracé automatique contourne les composants et ne longe pas les autres liaisons (il les croise seulement quand c'est inévitable, jamais au départ d'un orifice). Faites glisser un fil pour déplacer son segment central ; « Tracé automatique » (clic droit) le recalcule.</li>
   <li>Liez les technologies par les <b>repères</b> : une bobine K1 commande les contacts K1, un solénoïde Y1 commande le distributeur dont l'électro-aimant est Y1, un fin de course renseigne le vérin associé (A0 = rentré, A1 = sorti).</li>
   <li>Les <b>folios</b> (onglets en bas) structurent le projet. Les renvois de folio de même nom relient les potentiels entre folios. Les références croisées (folio.zone) s'affichent sous les bobines et les vérins.</li>
   <li>Le panneau de droite permet de régler les paramètres techniques, de choisir un modèle du catalogue et de simuler une défaillance.</li></ul>
@@ -4621,7 +4680,7 @@ function exCbv() {
   const A = o.add('cyl', 450, 220, { tag: 'A', medium: 'hyd', bore: 63, rod: 36, stroke: 300, load: 20000, ldir: 'sortie', labPos: 'tr' }, 0, 3);
   const C = o.add('cbv', 590, 400, { tag: '1V2', set: 90, ratio: 4 });
   const G1 = o.add('gauge', 160, 520, { tag: 'P1' }), G2 = o.add('gauge', 680, 300, { tag: 'P2' });
-  o.w(V, 'P', P, 'P'); o.w(V, 'T', F, '2'); o.w(F, '1', P, 'T'); o.w(C, '2', A, 'A'); o.w(C, '1', V, 'A', 460); o.w(C, 'X', V, 'B', 360); o.w(V, 'B', A, 'B', 360); o.w(G1, 'f', V, 'P'); o.w(G2, 'f', A, 'A');
+  o.w(V, 'P', P, 'P'); o.w(V, 'T', F, '2'); o.w(F, '1', P, 'T'); o.w(C, '2', A, 'A'); o.w(C, '1', V, 'A'); o.w(C, 'X', V, 'B'); o.w(V, 'B', A, 'B'); o.w(G1, 'f', V, 'P'); o.w(G2, 'f', A, 'A');
   o.txt(820, 380, 'Vérin vertical chargé à 2 tonnes (charge pesante).\nMaintenez le côté gauche du distributeur (Y1) pour lever, le côté droit (Y2) pour descendre :\nla soupape d\'équilibrage s\'ouvre par le pilotage X.\nEssayez : clic sur le flexible soupape → distributeur, puis « Simuler une rupture » :\nla charge reste retenue. Avec la défaillance « clapet non étanche », elle chute.', 0, 13);
   return o;
 }

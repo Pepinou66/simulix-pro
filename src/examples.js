@@ -163,7 +163,7 @@ function exCbv() {
   const A = o.add('cyl', 450, 220, { tag: 'A', medium: 'hyd', bore: 63, rod: 36, stroke: 300, load: 20000, ldir: 'sortie', labPos: 'tr' }, 0, 3);
   const C = o.add('cbv', 590, 400, { tag: '1V2', set: 90, ratio: 4 });
   const G1 = o.add('gauge', 160, 520, { tag: 'P1' }), G2 = o.add('gauge', 680, 300, { tag: 'P2' });
-  o.w(V, 'P', P, 'P'); o.w(V, 'T', F, '2'); o.w(F, '1', P, 'T'); o.w(C, '2', A, 'A'); o.w(C, '1', V, 'A', 460); o.w(C, 'X', V, 'B', 360); o.w(V, 'B', A, 'B', 360); o.w(G1, 'f', V, 'P'); o.w(G2, 'f', A, 'A');
+  o.w(V, 'P', P, 'P'); o.w(V, 'T', F, '2'); o.w(F, '1', P, 'T'); o.w(C, '2', A, 'A'); o.w(C, '1', V, 'A'); o.w(C, 'X', V, 'B'); o.w(V, 'B', A, 'B'); o.w(G1, 'f', V, 'P'); o.w(G2, 'f', A, 'A');
   o.txt(820, 380, 'Vérin vertical chargé à 2 tonnes (charge pesante).\nMaintenez le côté gauche du distributeur (Y1) pour lever, le côté droit (Y2) pour descendre :\nla soupape d\'équilibrage s\'ouvre par le pilotage X.\nEssayez : clic sur le flexible soupape → distributeur, puis « Simuler une rupture » :\nla charge reste retenue. Avec la défaillance « clapet non étanche », elle chute.', 0, 13);
   return o;
 }
