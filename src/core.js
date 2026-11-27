@@ -469,7 +469,9 @@ function hoverBox(c) { // boîte de survol : encombrement + zone animée éventu
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
 let touchMode = false;
-function hitPort(p) { const r = (touchMode ? 18 : 9) / Math.max(App.view.s, .5); let best = null, bd = r; for (const c of App.sheetComps()) for (const q of compPorts(c)) { const w = portWorld(c, q), d = Math.hypot(w.x - p.x, w.y - p.y); if (d < bd) { bd = d; best = { c, p: q }; } } return best; }
+// au doigt, la zone d'un orifice est élargie… sauf quand on touche l'intérieur d'un composant : à faible zoom (téléphone),
+// elle recouvrirait tout un petit composant (manomètre) et un simple toucher commencerait une liaison au lieu de le sélectionner
+function hitPort(p) { const hc = touchMode && hitComp(p), big = touchMode && !(hc && !DEFS[hc.type].isFrame), r = (big ? 18 : 9) / Math.max(App.view.s, .5); let best = null, bd = r; for (const c of App.sheetComps()) for (const q of compPorts(c)) { const w = portWorld(c, q), d = Math.hypot(w.x - p.x, w.y - p.y); if (d < bd) { bd = d; best = { c, p: q }; } } return best; }
 function hitWire(p, px = 6) { const tol = px / App.view.s, ids = new Set(App.sheetComps().map(c => c.id)); for (const w of App.wires) { if (!ids.has(w.a.c)) continue; const wp = wirePts(w); if (!wp) continue; for (let i = 0; i < wp.pts.length - 1; i++) if (distSeg(p, wp.pts[i], wp.pts[i + 1]) < tol) return w; } return null; }
 let lpTimer = null; // appui long (écran tactile) = menu contextuel
 cv.addEventListener('pointerdown', e => { touchMode = e.pointerType === 'touch'; clearTimeout(lpTimer); if (touchMode) { const sx = e.clientX, sy = e.clientY, ox = e.offsetX, oy = e.offsetY; lpTimer = setTimeout(() => { if (ptrs.size > 1) return; if (drag && drag.moved) return; if (drag && drag.mode === 'pan' && drag.lpx != null) return; drag = null; ptrs.clear(); if (navigator.vibrate) navigator.vibrate(15); Ctx.open(sx, sy, View.toWorld(ox, oy)); }, 550); } }, true);

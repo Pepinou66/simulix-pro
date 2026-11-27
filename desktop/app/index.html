@@ -10,6 +10,8 @@
 <meta name="apple-mobile-web-app-title" content="Simulix Pro">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-192.png">
+<script>/* iPhone / iPad : Safari dessine les listes déroulantes à sa façon (fond clair) → classe .ios pour les styler nous-mêmes */
+if (/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) document.documentElement.classList.add('ios');</script>
 <title>Simulix Pro — Conception et simulation de systèmes automatisés</title>
 <style>
 :root{
@@ -21,6 +23,7 @@
 html,body{margin:0;height:100%;font:13px/1.35 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--text);background:var(--bg);overflow:hidden}
 button{font:inherit;cursor:pointer}
 input,select,textarea{font:inherit}
+html.ios select{-webkit-appearance:none;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%2394a3b8'/%3E%3C/svg%3E")!important;background-repeat:no-repeat!important;background-position:right 6px center!important;padding-right:20px!important}
 #app{display:grid;grid-template-rows:var(--top) 1fr auto;height:100%}
 /* ---- top bar ---- */
 #top{display:flex;align-items:center;gap:4px;padding:0 8px;background:#151b26;color:#fff;overflow-x:auto;white-space:nowrap;scrollbar-width:none}
@@ -333,7 +336,7 @@ function store(k, v) { try { if (v === undefined) return localStorage.getItem(k)
      ouverture de projets, recherche de mise à jour (APK sur GitHub Releases) ;
    - version web installable (PWA, Android et iPhone/iPad) : service worker.
    ===================================================================== */
-const SIMULIX_VERSION = '2.3.2';
+const SIMULIX_VERSION = '2.3.3';
 (function () {
   const C = window.Capacitor, native = !!(C && C.isNativePlatform && C.isNativePlatform());
   if (native) {
@@ -3214,7 +3217,9 @@ function hoverBox(c) { // boîte de survol : encombrement + zone animée éventu
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
 let touchMode = false;
-function hitPort(p) { const r = (touchMode ? 18 : 9) / Math.max(App.view.s, .5); let best = null, bd = r; for (const c of App.sheetComps()) for (const q of compPorts(c)) { const w = portWorld(c, q), d = Math.hypot(w.x - p.x, w.y - p.y); if (d < bd) { bd = d; best = { c, p: q }; } } return best; }
+// au doigt, la zone d'un orifice est élargie… sauf quand on touche l'intérieur d'un composant : à faible zoom (téléphone),
+// elle recouvrirait tout un petit composant (manomètre) et un simple toucher commencerait une liaison au lieu de le sélectionner
+function hitPort(p) { const hc = touchMode && hitComp(p), big = touchMode && !(hc && !DEFS[hc.type].isFrame), r = (big ? 18 : 9) / Math.max(App.view.s, .5); let best = null, bd = r; for (const c of App.sheetComps()) for (const q of compPorts(c)) { const w = portWorld(c, q), d = Math.hypot(w.x - p.x, w.y - p.y); if (d < bd) { bd = d; best = { c, p: q }; } } return best; }
 function hitWire(p, px = 6) { const tol = px / App.view.s, ids = new Set(App.sheetComps().map(c => c.id)); for (const w of App.wires) { if (!ids.has(w.a.c)) continue; const wp = wirePts(w); if (!wp) continue; for (let i = 0; i < wp.pts.length - 1; i++) if (distSeg(p, wp.pts[i], wp.pts[i + 1]) < tol) return w; } return null; }
 let lpTimer = null; // appui long (écran tactile) = menu contextuel
 cv.addEventListener('pointerdown', e => { touchMode = e.pointerType === 'touch'; clearTimeout(lpTimer); if (touchMode) { const sx = e.clientX, sy = e.clientY, ox = e.offsetX, oy = e.offsetY; lpTimer = setTimeout(() => { if (ptrs.size > 1) return; if (drag && drag.moved) return; if (drag && drag.mode === 'pan' && drag.lpx != null) return; drag = null; ptrs.clear(); if (navigator.vibrate) navigator.vibrate(15); Ctx.open(sx, sy, View.toWorld(ox, oy)); }, 550); } }, true);
@@ -4477,6 +4482,7 @@ function help() {
   <h4>Dépannage</h4><ul><li>Le formateur introduit des défaillances (fil coupé, contact collé, bobine coupée, tiroir bloqué, vérin grippé…), puis active 🛠 Dépannage et enregistre le projet. L'apprenant mesure (voltmètre, manomètre, traceur) et signale les composants défectueux.</li></ul>
   <h4>Code source</h4><p>Simulix Pro est un logiciel libre (licence GPL-3.0) : <a href="https://github.com/Pepinou66/simulix-pro" target="_blank" rel="noopener">github.com/Pepinou66/simulix-pro</a></p>
   <h4>Ergonomie</h4><p>Clic droit sur un composant, une liaison ou le fond du schéma : modifier, renommer, régler, défaillance, position du repère, ajouter un composant, coller, supprimer. Faites glisser les bords de la bibliothèque et du panneau de propriétés pour les redimensionner (double-clic : taille par défaut).</p>
+  <h4>Téléphone et tablette</h4><p>Touchez un composant pour le sélectionner, appui long pour son menu, deux doigts pour zoomer. Pour tirer une liaison, touchez juste à côté de l'orifice, hors du composant (zoomez si le schéma est petit). Sur iPhone / iPad, ouvrez la version web dans Safari puis Partager → « Sur l'écran d'accueil » : elle s'installe comme une application et fonctionne hors ligne.</p>
   <h4>Mises à jour</h4><p>Menu Aide → Rechercher des mises à jour : choix du mode (me demander, automatique à l'ouverture, à la fermeture, au démarrage de Windows). <button class="btn" onclick="Updates.open()">Ouvrir les réglages de mise à jour</button></p>
   <h4>Raccourcis</h4><p>Suppr : supprimer · R : pivoter · Ctrl+Z / Ctrl+Y : annuler / rétablir · Ctrl+C / Ctrl+V / Ctrl+D : copier / coller / dupliquer · Ctrl+A : tout sélectionner · Ctrl+S : enregistrer · F5 : simuler / arrêter · Molette : zoom · Clic droit ou clic molette glissé : déplacer la vue.</p>
   </div>`;
