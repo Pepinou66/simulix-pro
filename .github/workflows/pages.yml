@@ -1,0 +1,35 @@
+# Publie la version web (PWA) de Simulix Pro sur GitHub Pages :
+# https://pepinou66.github.io/simulix-pro/ — installable sur iPhone / iPad (Safari → Partager → « Sur l'écran d'accueil »).
+# Déclenchement : comme la release (nouvelle "version" dans desktop/package.json sur main) ou lancement manuel.
+name: Version web (GitHub Pages)
+on:
+  push:
+    branches: [main]
+    paths: ['desktop/package.json']
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Assemblage de l'application web
+        run: python build.py
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+      - id: deployment
+        uses: actions/deploy-pages@v4
