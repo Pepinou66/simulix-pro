@@ -122,9 +122,19 @@ function wirePts(w) {
    composant ni revenir sur le départ d'un orifice. */
 const ROUTE_CACHE = new Map();
 function routeBox(c) { if (!c || c.type === 'node' || c.type === 'text' || c.type === 'offpage' || DEFS[c.type].isFrame) return null; const b = compBBox(c); return { x0: b.x, y0: b.y, x1: b.x + b.w, y1: b.y + b.h }; }
-function routeRects(ca, cb, x0, y0, x1, y1) { // composants raccordés d'abord, puis ceux de la zone du tracé
-  const others = App.sheetComps().filter(c => c !== ca && c !== cb).map(routeBox).filter(r => r && r.x1 > x0 && r.x0 < x1 && r.y1 > y0 && r.y0 < y1);
-  return [routeBox(ca), routeBox(cb), ...others.slice(0, 40)];
+let LAB_CTX = null;
+function labelRectsOf(c) { // repère + références croisées, et textes / annotations : à ne pas recouvrir (marge réduite)
+  if (c.type === 'text') { const b = compBBox(c); return [{ x0: b.x, y0: b.y, x1: b.x + b.w, y1: b.y + b.h, lab: 1, m: 6 }]; }
+  if (DEFS[c.type].isFrame || c.type === 'node') return [];
+  try { LAB_CTX = LAB_CTX || document.createElement('canvas').getContext('2d'); } catch (e) { return []; }
+  if (!LAB_CTX) return []; const L = labelBox(LAB_CTX, c, compBBox(c)); if (!L) return [];
+  return [{ x0: L.x - 2, y0: L.y - 2, x1: L.x + L.W + 2, y1: L.y + L.H + 2, lab: 1, m: 6 }];
+}
+function routeRects(ca, cb, x0, y0, x1, y1) { // composants raccordés d'abord, puis ceux de la zone du tracé, puis les étiquettes
+  const inZ = r => r && r.x1 > x0 && r.x0 < x1 && r.y1 > y0 && r.y0 < y1, cs = App.sheetComps();
+  const others = cs.filter(c => c !== ca && c !== cb).map(routeBox).filter(inZ);
+  const labs = cs.flatMap(labelRectsOf).filter(inZ);
+  return [routeBox(ca), routeBox(cb), ...others.slice(0, 40), ...labs.slice(0, 40)];
 }
 function segCross(a, b, r) { // le segment traverse l'intérieur du rectangle
   const e = 1; if (!r) return false;
@@ -149,9 +159,9 @@ function autoRoute(w, A, B, s1, s2) {
   rects.forEach(r => { if (r) { zx0 = Math.min(zx0, r.x0 - 2 * M); zx1 = Math.max(zx1, r.x1 + 2 * M); zy0 = Math.min(zy0, r.y0 - 2 * M); zy1 = Math.max(zy1, r.y1 + 2 * M); } });
   // grille : lignes de départ/arrivée, milieu, contours des composants décalés de M, bords de la zone
   const X = new Set([s1.x, s2.x, Math.round((s1.x + s2.x) / 2), zx0, zx1]), Y = new Set([s1.y, s2.y, Math.round((s1.y + s2.y) / 2), zy0, zy1]);
-  rects.forEach(r => { if (r) { X.add(r.x0 - M); X.add(r.x1 + M); Y.add(r.y0 - M); Y.add(r.y1 + M); } });
+  rects.forEach(r => { if (r) { const m = r.m || M; X.add(r.x0 - m); X.add(r.x1 + m); Y.add(r.y0 - m); Y.add(r.y1 + m); } });
   // coût de traversée de chaque arête de la grille (composant raccordé : 2000 si le départ/l'arrivée n'y est pas, autre composant : 6000)
-  const pen = r => (inRect(s1, r) || inRect(s2, r)) ? 400 : (r === ra || r === rb) ? 2000 : 6000;
+  const pen = r => (inRect(s1, r) || inRect(s2, r)) ? 400 : (r === ra || r === rb) ? 2000 : r.lab ? 3000 : 6000; // étiquette : à contourner, mais moins grave qu'un composant
   // flexibles déjà tracés (ceux qui précèdent dans la liste, pour un ordre stable) : ne pas les longer, les croiser le moins possible
   const same = (p, q) => p.c === q.c && p.p === q.p, k0 = App.wires.indexOf(w), segs = [];
   App.wires.slice(0, Math.max(0, k0)).forEach(o => {
@@ -176,7 +186,7 @@ function autoRoute(w, A, B, s1, s2) {
   const hC = new Float64Array(nx * ny), vC = new Float64Array(nx * ny); // hC[j*nx+i] : (i,j)→(i+1,j) ; vC[j*nx+i] : (i,j)→(i,j+1)
   for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
     let h = 0, v = 0; const p = { x: xs[i], y: ys[j] };
-    for (const r of rects) { if (!r) continue; const q = { x0: r.x0 - M + 3, y0: r.y0 - M + 3, x1: r.x1 + M - 3, y1: r.y1 + M - 3 }, near = (inRect(s1, q) || inRect(s2, q)) ? 0 : 300; // longer un composant au ras : à éviter
+    for (const r of rects) { if (!r) continue; const m = r.m || M, q = { x0: r.x0 - m + 3, y0: r.y0 - m + 3, x1: r.x1 + m - 3, y1: r.y1 + m - 3 }, near = (inRect(s1, q) || inRect(s2, q)) ? 0 : 300; // longer un composant au ras : à éviter
       if (i < nx - 1) { const b = { x: xs[i + 1], y: ys[j] }; h += segCross(p, b, r) ? pen(r) : segCross(p, b, q) ? near : 0; }
       if (j < ny - 1) { const b = { x: xs[i], y: ys[j + 1] }; v += segCross(p, b, r) ? pen(r) : segCross(p, b, q) ? near : 0; } }
     if (i < nx - 1) h += wirePen(0, ys[j], xs[i], xs[i + 1]); if (j < ny - 1) v += wirePen(1, xs[i], ys[j], ys[j + 1]);
